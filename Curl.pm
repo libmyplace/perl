@@ -198,6 +198,7 @@ sub _run_curl
             push @args,$_;
         }
     }
+#    print join(" ",@CURL,@args),"\n";
     open FI,"-|",@CURL,@args;
     my $data = join("",<FI>);
     close FI;
@@ -240,10 +241,7 @@ sub post {
     push @args,"--referer",$referer if($referer);
     if(%posts) 
     {
-        foreach (keys %posts) 
-        {
-            push @args,"--data-urlencode","$_=$posts{$_}";
-        }
+        push @args, "--data-urlencode",join("&", map({$_=$posts{$_}} keys %posts));
     }
     return $self->_run_curl(@args);
 }
