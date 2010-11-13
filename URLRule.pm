@@ -554,7 +554,7 @@ sub urlrule_get_passdown {
     return unless($result_ref->{pass_data});
     my %rule = %{$rule_ref};
     my %result = %{$result_ref};
-    my $level = $rule{"level"} - 1;
+    my $level = $result{level} ? $result{level} : $result{same_level} ? $rule{"level"} : $rule{"level"} - 1;
     my $action = $rule{"action"};
     my @args = $rule{"args"} ? @{$rule{"args"}} : ();
     if(ref $result{pass_data} eq 'SCALAR') {
