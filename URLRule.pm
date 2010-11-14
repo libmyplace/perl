@@ -3,6 +3,7 @@ package MyPlace::URLRule;
 use URI;
 use URI::Escape;
 use MyPlace::Script::Message;
+use MyPlace::Curl;
 use strict;
 use Cwd;
 
@@ -11,15 +12,37 @@ BEGIN {
     our ($VERSION,@ISA,@EXPORT,@EXPORT_OK,%EXPORT_TAGS);
     $VERSION        = 1.00;
     @ISA            = qw(Exporter);
-    @EXPORT         = qw($URLRULE_DIRECTORY &urlrule_process_data &urlrule_process_passdown &urlrule_process_args &urlrule_process_result &get_domain &get_rule_dir &build_url &parse_rule &urlrule_do_action &execute_rule &urlrule_get_passdown urlrule_parse_pages);
+    @EXPORT_OK         = qw($URLRULE_DIRECTORY &parse_rule &apply_rule &get_domain &get_rule_dir &make_url &execute_rule );
+    @EXPORT         = qw($URLRULE_DIRECTORY &urlrule_process_data &urlrule_process_passdown &urlrule_process_args &urlrule_process_result &urlrule_do_action &urlrule_get_passdown urlrule_parse_pages &urlrule_set_callback);
 }
 
 #my $URLRULE_DIRECTORY = "$ENV{XR_PERL_SOURCE_DIR}/urlrule";
 
+my %CALLBACK;
+
+sub urlrule_set_callback {
+    $CALLBACK{$_[0]}=$_[1];
+}
 
 our $USER_URLRULE_DIRECTORY = "$ENV{HOME}/.urlrule";
 our $URLRULE_DIRECTORY = "$ENV{XR_PERL_SOURCE_DIR}/urlrule";
 
+sub make_url {
+    my $line = shift;
+    my $base = shift;
+    if($line =~ /^([^\t]+)\t+(.+)$/) {
+        return URI->new_abs($1,$base) . "\t" . $2;
+    }
+    else {
+        return URI->new_abs($line,$base);
+    }
+}
+
+sub build_url($$) {
+    my ($base,$url) = @_;
+    $url = URI->new_abs($url,$base) if($base);
+    return $url;
+}
 sub strnum($$) {
     my $num=shift;
     my $len=shift;
@@ -31,6 +54,80 @@ sub strnum($$) {
         return "0" x ($len-$o_len) . $num;
     }
 }
+
+sub delete_dup {
+    my %holder;
+    foreach(@_) {
+        $holder{$_} = 1;
+    }
+    return keys %holder;
+}
+
+sub change_directory {
+    my $path = shift;
+    return 1 unless($path);
+    if(! -d $path) {
+        app_message("Creating directory \"$path\"...");
+        if(mkdir $path) {
+            print STDERR "\t[OK]\n";
+        }
+        else {
+            print STDERR "\t[Failed]\n";
+            return undef;
+        }
+    }
+    app_message("Changing directory to \"$path\"...");
+    if(chdir $path) {
+        print STDERR "\t[OK]\n";
+    }
+    else {
+        print STDERR "\t[Failed]\n";
+        return undef;
+    }
+    return 1;
+}
+
+sub unescape_text {
+    my %ESCAPE_MAP = (
+        "&lt;","<" ,"&gt;",">",
+        "&amp;","&" ,"&quot;","\"",
+        "&agrave;","à" ,"&Agrave;","À",
+        "&acirc;","â" ,"&auml;","ä",
+        "&Auml;","Ä" ,"&Acirc;","Â",
+        "&aring;","å" ,"&Aring;","Å",
+        "&aelig;","æ" ,"&AElig;","Æ" ,
+        "&ccedil;","ç" ,"&Ccedil;","Ç",
+        "&eacute;","é" ,"&Eacute;","É" ,
+        "&egrave;","è" ,"&Egrave;","È",
+        "&ecirc;","ê" ,"&Ecirc;","Ê",
+        "&euml;","ë" ,"&Euml;","Ë",
+        "&iuml;","ï" ,"&Iuml;","Ï",
+        "&ocirc;","ô" ,"&Ocirc;","Ô",
+        "&ouml;","ö" ,"&Ouml;","Ö",
+        "&oslash;","ø" ,"&Oslash;","Ø",
+        "&szlig;","ß" ,"&ugrave;","ù",
+        "&Ugrave;","Ù" ,"&ucirc;","û",
+        "&Ucirc;","Û" ,"&uuml;","ü",
+        "&Uuml;","Ü" ,"&nbsp;"," ",
+        "&copy;","\x{00a9}",
+        "&reg;","\x{00ae}",
+        "&euro;","\x{20a0}",
+    );
+    my $text = shift;
+    return unless($text);
+    foreach (keys %ESCAPE_MAP) {
+        $text =~ s/$_/$ESCAPE_MAP{$_}/g;
+    }
+    $text =~ s/&#(\d+);/chr($1)/eg;
+    $text = uri_unescape($text);
+#    $text =~ s/[_-]+/ /g;
+    $text =~ s/[\:]+/, /g;
+    $text =~ s/[\\\<\>"\^\&\*\?]+//g;
+    $text =~ s/\s{2,}/ /g;
+    $text =~ s/(?:^\s+|\s+$)//;
+    return $text;
+}
+
 sub get_rule_dir() {
     return $URLRULE_DIRECTORY;
 }
@@ -50,10 +147,9 @@ sub get_domain($) {
     }
 }
 
-sub parse_rule(@) {
+sub parse_rule {
     my %r;
     $r{url} = shift;
-
     if($r{url} =~ /^local:([^\/]+)/) {
         $r{"local"} = $1;
         $r{url} =~ s/^local:/file_/;
@@ -118,210 +214,13 @@ sub parse_rule(@) {
     return \%r;
 }
 
-sub build_url($$) {
-    my ($base,$url) = @_;
-    $url = URI->new_abs($url,$base) if($base);
-    return $url;
-}
-
-sub callback_process_data {
-    my $from = shift;
-    app_message("callback:$from\n") if($from);
-    goto &urlrule_process_data;
-#    &main::process_data(@_);
-}
-sub callback_process_passdown {
-    my $from = shift;
-    app_message("callback:$from\n") if($from);
-    goto &urlrule_process_passdown;
-#    &main::process_passdown(@_);
-}
-sub callback_do_action {
-    my $from = shift;
-    app_message("callback:$from\n") if($from);
-    goto &urlrule_do_action;
-#    &main::do_action(@_);
-}
-
-
-sub urlrule_process_data {
-    my $rule_ref = shift;
-    return unless(ref $rule_ref);
-    return unless(%{$rule_ref});
-    my $result_ref = shift;
-    return unless(ref $result_ref);
-    return unless(%{$result_ref});
-
-    return unless($result_ref->{data});
-    my %rule = %{$rule_ref};
-    my %result = %{$result_ref};
-    
-    my $url=$rule{"url"};
-    my $level = $rule{"level"};
-    my $action = $rule{"action"};
-    my @args = $rule{"args"} ? @{$rule{"args"}} : ();
-    my $msghd = $result{work_dir} ? "[". $result{work_dir} . "]" : "";
-    my $count = @{$result{data}};
-    app_message($msghd , "Level $level>>","Get $count Lines\n");
-    #,performing action $action..\n");
-    my ($status,@message) = callback_do_action(undef,$result_ref,$action,@args);
-    if($status) {
-        app_message($msghd,"Level $level>>",@message,"\n");
-        return 1;
-    }
-    else {
-        app_warning($msghd,"Level $level>>",@message,"\n");
-        return undef;
-    }
-}
-
-
-sub urlrule_process_passdown {
-    my $rule_ref = shift;
-    return unless(ref $rule_ref);
-    return unless(%{$rule_ref});
-    my $result_ref = shift;
-    return unless(ref $result_ref);
-    return unless(%{$result_ref});
-    my $msghd="";
-    my ($count,@passdown) = urlrule_get_passdown($rule_ref,$result_ref);
-    my $level = $rule_ref->{level};
-    if($count) {
-        app_message($msghd,"Level $level>>","Get $count rules to pass down\n");
-    }
-    else {
-        return undef;
-        return 1;
-    }
-    my $CWD = getcwd;
-    foreach(@passdown) {
-        my($status1,$rule,$result) = urlrule_process_args(@{$_});
-        if($status1)
-        {
-            my($status2,$pass_count,@pass_args)
-                = urlrule_process_result($rule,$result);
-            my $CWD = getcwd;
-            if($status2) {
-                foreach(@pass_args) {
-                    callback_process_passdown(undef,@{$_});
-                    chdir $CWD;
-                }
-            }
-        }
-        chdir $CWD;
-    }
-    return 1;
-}
-
-sub delete_dup {
-    my %holder;
-    foreach(@_) {
-        $holder{$_} = 1;
-    }
-    return keys %holder;
-}
-
-
-use MyPlace::Curl;
-sub urlrule_quick_parse {
-    my %args = @_;
-    my $url = $args{url};
-    die("Error 'url=>undef'\n") unless($url);
-    my $title;
-#    my %rule = %{$args{rule}};
-    my ($title_exp,$title_map,$data_exp,$data_map,$pass_exp,$pass_map,$pass_name_exp,$pass_name_map,$pages_exp,$pages_map,$pages_pre,$pages_suf,$pages_start,$charset) = @args{qw/
-        title_exp
-        title_map
-        data_exp
-        data_map
-        pass_exp
-        pass_map
-        pass_name_exp
-        pass_name_map
-        pages_exp
-        pages_map
-        pages_pre
-        pages_suf
-        pages_start
-        charset
-    /};
-    my $http = MyPlace::Curl->new();
-    my (undef,$html) = $http->get($url,(defined $charset ? "charset:$charset" : undef));
-    my @data;
-    my @pass_data;
-    my @pass_name;
-    $data_map = '$1' unless($data_map);
-    $pass_map = '$1' unless($pass_map);
-    $pass_name_map = $pass_name_exp unless($pass_name_map);
-    if($title_exp) {
-        $title_map = '$1' unless($title_map);
-        if($html =~ m/$title_exp/g) {
-            $title = eval($title_map);
-        }
-    }
-    if($data_exp) {
-        while($html =~ m/$data_exp/g) {
-            push @data,eval($data_map);
-        }
-    }
-    if($pass_exp) {
-        while($html =~ m/$pass_exp/g) {
-            push @pass_data,eval($pass_map);
-            if($pass_name_map) {
-                push @pass_name,eval($pass_name_map);
-            }
-        }
-    }
-    elsif($pages_exp) {
-        $pages_start = 2 unless(defined $pages_start);
-        my $last = $pages_start - 1; 
-        my $pre = "";
-        my $suf = "";
-        while($html =~ m/$pages_exp/g) {
-            if(eval($pages_map) > $last) {
-                    $last = eval($pages_map);
-                    $pre = eval($pages_pre) if($pages_pre);
-                    $suf = eval($pages_suf) if($pages_suf);
-            }
-        }
-        if($last >= $pages_start) {
-            @pass_data = map "$pre$_$suf",($pages_start .. $last);
-        }
-        push @pass_data,$url;
-    }
-    @data = delete_dup(@data) if(@data);
-    @pass_data = delete_dup(@pass_data) if(@pass_data and (!@pass_name));
-    return (
-        count=>scalar(@data),
-        data=>[@data],
-        pass_count=>scalar(@pass_data),
-        pass_data=>[@pass_data],
-        pass_name=>[@pass_name],
-        base=>$url,
-        no_subdir=>(@pass_name ? 0 : 1),
-        work_dir=>$title,
-        %args,
-    );
-}
-
-sub urlrule_process_args 
-{
-    my ($dir,@args) = @_;
-    my $rule = parse_rule(@args);
-    unless($rule)
-    {
-        app_message("Invalid args : " . join(" ",@args),"\n");
+sub apply_rule {
+    my $rule = shift;
+    unless($rule and ref $rule and %{$rule}) {
+        app_error("Invalid rule, could not apply!");
         return undef;
     }
     my $level = $rule->{level};
-    if($dir)
-    {
-        mkdir $dir unless(-d $dir);
-        if(!chdir $dir) {
-            app_error("Level $level>>","$!\n");
-            return undef;
-        }
-    }
     my $url = $rule->{url};
     my $source = $rule->{"source"};
     my $msghd = "Level $level>>";
@@ -332,155 +231,25 @@ sub urlrule_process_args
         return undef;
     }
     app_message($msghd,"Applying it...\n");
+    package MyPlace::URLRule::File;
     {
-    no warnings "all";
-    unless(my $do_exit = do $source) { 
-        die("couldn't parse $source:\n$@") if($@);
-        #die("couldn't do $source:$!") unless defined $do_exit;
-        #die("couldn't run $source") unless $do_exit;
+        unless(my $do_exit = do $source) { 
+            if($@) {
+                app_error($msghd, "couldn't parse $source:\n$@");
+                return undef;
+            }
+        }
     }
-    }
-    my %result = &apply_rule($url,$rule);
+    package MyPlace::URLRule;
+    my %result = MyPlace::URLRule::File::apply_rule($url,$rule);
     if($result{"#use quick parse"}) {
-        %result = &urlrule_quick_parse('url'=>$url,%result);
+        %result = urlrule_quick_parse('url'=>$url,%result);
     }
     if($result{work_dir}) {
         $result{work_dir} = &unescape_text($result{work_dir});
     }
-    return 1,$rule,\%result;
+    return \%result;
 }
-
-sub execute_rule {
-    my %rule = %{$_[0]};
-    my $url = $rule{url};
-    my $source = $rule{"source"};
-    my @args = $rule{"args"} ? @{$rule{"args"}} : ();
-    unless(-f $source) {
-        return undef,"File not found: $source";
-    }
-#    $! = undef;
-    {
-    no warnings 'all';
-    unless(my $do_exit = do $source) { 
-        return undef,"couldn't parse $source:\n$@" if($@);
-        #die("couldn't do $source:$!") unless defined $do_exit;
-        #die("couldn't run $source") unless $do_exit;
-    }
-    }
-    my %result = &apply_rule($url,\%rule);
-    if($result{"#use quick parse"}) {
-        %result = &urlrule_quick_parse('url'=>$url,%result);
-    }
-    if($result{work_dir}) {
-        $result{work_dir} = &unescape_text($result{work_dir});
-    }
-    return 1,\%result;
-}
-
-sub urlrule_process_result
-{
-    #return #status,pass_count,@pass_args;
-    my($rule,$result,$p_action,@p_args) = @_;
-    unless($rule and ref $rule and %{$rule})
-    {
-        app_error("Invaild Rule\n");
-        return undef;
-    }
-    my $level = $rule->{"level"};
-    unless($result and ref $result and %{$result})
-    {
-        app_error("Level $level>>","Invalid Result\n");
-        return undef;
-    }
-    if($result->{work_dir}) {
-        unless( -d $result->{work_dir}) {
-            app_message "Creating directory : \"$result->{work_dir}\"...\n";
-            mkdir $result->{work_dir};
-        }
-        chdir $result->{work_dir} or return undef,$!;
-    }
-    my $action;
-    my @args;
-    if($p_action) 
-    {
-        $action = $p_action;
-        @args = @p_args;
-    }
-    else
-    {
-        $action = $rule->{action};
-        @args = @{$rule->{args}} if($rule->{args});
-    }
-    my $count = $result->{data} ? @{$result->{data}} : 0;
-#    if($count > 0)
-#    {
-        app_message("Level $level>>","Get $count Lines\n");
-        #,performing action \"$action\" ...\n") if($count > 0);
-        my($action_status,$action_message) = callback_do_action(undef,$result,$action,@args);
-        if($action_status) {
-            app_message "Level $level>>$action_message\n";
-        }
-        else {
-            app_warning "Level $level>>$action_message\n" if($action_message);
-        }
-#    }
-    my ($pass_count,@pass_args) = urlrule_get_passdown($rule,$result);
-    app_message "Level $level>>", "Get $pass_count rules to pass down\n" if($pass_count);
-    return 1,$pass_count,@pass_args;
-}
-
-sub unescape_text {
-    my %ESCAPE_MAP = (
-        "&lt;","<" ,"&gt;",">",
-        "&amp;","&" ,"&quot;","\"",
-        "&agrave;","à" ,"&Agrave;","À",
-        "&acirc;","â" ,"&auml;","ä",
-        "&Auml;","Ä" ,"&Acirc;","Â",
-        "&aring;","å" ,"&Aring;","Å",
-        "&aelig;","æ" ,"&AElig;","Æ" ,
-        "&ccedil;","ç" ,"&Ccedil;","Ç",
-        "&eacute;","é" ,"&Eacute;","É" ,
-        "&egrave;","è" ,"&Egrave;","È",
-        "&ecirc;","ê" ,"&Ecirc;","Ê",
-        "&euml;","ë" ,"&Euml;","Ë",
-        "&iuml;","ï" ,"&Iuml;","Ï",
-        "&ocirc;","ô" ,"&Ocirc;","Ô",
-        "&ouml;","ö" ,"&Ouml;","Ö",
-        "&oslash;","ø" ,"&Oslash;","Ø",
-        "&szlig;","ß" ,"&ugrave;","ù",
-        "&Ugrave;","Ù" ,"&ucirc;","û",
-        "&Ucirc;","Û" ,"&uuml;","ü",
-        "&Uuml;","Ü" ,"&nbsp;"," ",
-        "&copy;","\x{00a9}",
-        "&reg;","\x{00ae}",
-        "&euro;","\x{20a0}",
-    );
-    my $text = shift;
-    return unless($text);
-    foreach (keys %ESCAPE_MAP) {
-        $text =~ s/$_/$ESCAPE_MAP{$_}/g;
-    }
-    $text =~ s/&#(\d+);/chr($1)/eg;
-    $text = uri_unescape($text);
-#    $text =~ s/[_-]+/ /g;
-    $text =~ s/[\:]+/, /g;
-    $text =~ s/[\\\<\>"\^\&\*\?]+//g;
-    $text =~ s/\s{2,}/ /g;
-    $text =~ s/(?:^\s+|\s+$)//;
-    return $text;
-}
-
-sub make_url {
-    my $line = shift;
-    my $base = shift;
-    if($line =~ /^([^\t]+)\t+(.+)$/) {
-        return URI->new_abs($1,$base) . "\t" . $2;
-    }
-    else {
-        return URI->new_abs($line,$base);
-    }
-}
-
 sub urlrule_do_action {
     my ($result_ref,$action,@args) = @_;
     return undef,"No results" unless(ref $result_ref);
@@ -591,6 +360,258 @@ sub urlrule_get_passdown {
     }
     return $count,@actions;
 }
+
+sub urlrule_quick_parse {
+    my %args = @_;
+    my $url = $args{url};
+    die("Error 'url=>undef'\n") unless($url);
+    my $title;
+#    my %rule = %{$args{rule}};
+    my ($title_exp,$title_map,$data_exp,$data_map,$pass_exp,$pass_map,$pass_name_exp,$pass_name_map,$pages_exp,$pages_map,$pages_pre,$pages_suf,$pages_start,$charset) = @args{qw/
+        title_exp
+        title_map
+        data_exp
+        data_map
+        pass_exp
+        pass_map
+        pass_name_exp
+        pass_name_map
+        pages_exp
+        pages_map
+        pages_pre
+        pages_suf
+        pages_start
+        charset
+    /};
+    my $http = MyPlace::Curl->new();
+    my (undef,$html) = $http->get($url,(defined $charset ? "charset:$charset" : undef));
+    my @data;
+    my @pass_data;
+    my @pass_name;
+    $data_map = '$1' unless($data_map);
+    $pass_map = '$1' unless($pass_map);
+    $pass_name_map = $pass_name_exp unless($pass_name_map);
+    if($title_exp) {
+        $title_map = '$1' unless($title_map);
+        if($html =~ m/$title_exp/g) {
+            $title = eval($title_map);
+        }
+    }
+    if($data_exp) {
+        while($html =~ m/$data_exp/g) {
+            push @data,eval($data_map);
+        }
+    }
+    if($pass_exp) {
+        while($html =~ m/$pass_exp/g) {
+            push @pass_data,eval($pass_map);
+            if($pass_name_map) {
+                push @pass_name,eval($pass_name_map);
+            }
+        }
+    }
+    elsif($pages_exp) {
+        $pages_start = 2 unless(defined $pages_start);
+        my $last = $pages_start - 1; 
+        my $pre = "";
+        my $suf = "";
+        while($html =~ m/$pages_exp/g) {
+            if(eval($pages_map) > $last) {
+                    $last = eval($pages_map);
+                    $pre = eval($pages_pre) if($pages_pre);
+                    $suf = eval($pages_suf) if($pages_suf);
+            }
+        }
+        if($last >= $pages_start) {
+            @pass_data = map "$pre$_$suf",($pages_start .. $last);
+        }
+        push @pass_data,$url;
+    }
+    @data = delete_dup(@data) if(@data);
+    @pass_data = delete_dup(@pass_data) if(@pass_data and (!@pass_name));
+    return (
+        count=>scalar(@data),
+        data=>[@data],
+        pass_count=>scalar(@pass_data),
+        pass_data=>[@pass_data],
+        pass_name=>[@pass_name],
+        base=>$url,
+        no_subdir=>(@pass_name ? 0 : 1),
+        work_dir=>$title,
+        %args,
+    );
+}
+
+
+
+sub callback_process_data {
+    my $from = shift;
+    app_message("callback:$from\n") if($from);
+    if($CALLBACK{process_data}) {
+        &{$CALLBACK{process_data}}(@_);
+    }
+    else {
+        goto &urlrule_process_data;
+    }
+}
+sub callback_process_passdown {
+    my $from = shift;
+    app_message("callback:$from\n") if($from);
+    if($CALLBACK{process_passdown}) {
+        &{$CALLBACK{process_passdown}}(@_);
+    }
+    else {
+        goto &urlrule_process_passdown;
+    }
+}
+sub callback_do_action {
+    my $from = shift;
+    app_message("callback:$from\n") if($from);
+    if($CALLBACK{process_do_action}) {
+        &{$CALLBACK{process_do_action}}(@_);
+    }
+    else {
+        goto &urlrule_do_action;
+    }
+}
+
+sub urlrule_process_data {
+    my $rule_ref = shift;
+    return unless(ref $rule_ref);
+    return unless(%{$rule_ref});
+    my $result_ref = shift;
+    return unless(ref $result_ref);
+    return unless(%{$result_ref});
+
+    return unless($result_ref->{data});
+    my %rule = %{$rule_ref};
+    my %result = %{$result_ref};
+    
+    my $url=$rule{"url"};
+    my $level = $rule{"level"};
+    my $action = $rule{"action"};
+    my @args = $rule{"args"} ? @{$rule{"args"}} : ();
+    my $msghd = $result{work_dir} ? "[". $result{work_dir} . "]" : "";
+    my $count = @{$result{data}};
+    app_message($msghd , "Level $level>>","Get $count Lines\n");
+    #,performing action $action..\n");
+    my ($status,@message) = callback_do_action(undef,$result_ref,$action,@args);
+    if($status) {
+        app_message($msghd,"Level $level>>",@message,"\n");
+        return 1;
+    }
+    else {
+        app_warning($msghd,"Level $level>>",@message,"\n");
+        return undef;
+    }
+}
+
+
+sub urlrule_process_passdown {
+    my $rule_ref = shift;
+    return unless(ref $rule_ref);
+    return unless(%{$rule_ref});
+    my $result_ref = shift;
+    return unless(ref $result_ref);
+    return unless(%{$result_ref});
+    my $msghd="";
+    my ($count,@passdown) = urlrule_get_passdown($rule_ref,$result_ref);
+    my $level = $rule_ref->{level};
+    if($count) {
+        app_message($msghd,"Level $level>>","Get $count rules to pass down\n");
+    }
+    else {
+        return undef;
+        return 1;
+    }
+    my $CWD = getcwd;
+    foreach(@passdown) {
+        my($status1,$rule,$result) = urlrule_process_args(@{$_});
+        if($status1)
+        {
+            my($status2,$pass_count,@pass_args)
+                = urlrule_process_result($rule,$result);
+            my $CWD = getcwd;
+            if($status2) {
+                foreach(@pass_args) {
+                    callback_process_passdown(undef,@{$_});
+                    chdir $CWD;
+                }
+            }
+        }
+        chdir $CWD;
+    }
+    return 1;
+}
+sub urlrule_process_result
+{
+    #return #status,pass_count,@pass_args;
+    my($rule,$result,$p_action,@p_args) = @_;
+    unless($rule and ref $rule and %{$rule})
+    {
+        app_error("Invaild Rule\n");
+        return undef;
+    }
+    my $level = $rule->{"level"};
+    unless($result and ref $result and %{$result})
+    {
+        app_error("Level $level>>","Invalid Result\n");
+        return undef;
+    }
+    if($result->{work_dir}) {
+        change_directory($result->{work_dir})
+            or return undef;
+    }
+    my $action;
+    my @args;
+    if($p_action) 
+    {
+        $action = $p_action;
+        @args = @p_args;
+    }
+    else
+    {
+        $action = $rule->{action};
+        @args = @{$rule->{args}} if($rule->{args});
+    }
+    my $count = $result->{data} ? @{$result->{data}} : 0;
+        app_message("Level $level>>","Get $count Lines\n");
+        my($action_status,$action_message) = callback_do_action(undef,$result,$action,@args);
+        if($action_status) {
+            app_message "Level $level>>$action_message\n";
+        }
+        else {
+            app_warning "Level $level>>$action_message\n" if($action_message);
+        }
+    my ($pass_count,@pass_args) = urlrule_get_passdown($rule,$result);
+    app_message "Level $level>>", "Get $pass_count rules to pass down\n" if($pass_count);
+    return 1,$pass_count,@pass_args;
+}
+
+
+sub urlrule_process_args 
+{
+    my ($dir,@args) = @_;
+    my $rule = &parse_rule(@args);
+    unless($rule)
+    {
+        app_message("Invalid args : " . join(" ",@args),"\n");
+        return undef;
+    }
+    my $level = $rule->{level};
+    if($dir)
+    {
+        change_directory($dir) or return undef;
+    }
+    my $result = &apply_rule($rule);
+    return 1,$rule,$result;
+}
+
+sub execute_rule {
+    my $result = &apply_rule(@_);
+    return 1,$result;
+}
+
 
 1;
 
