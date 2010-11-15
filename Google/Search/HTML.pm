@@ -2,7 +2,6 @@
 package MyPlace::Google::Search::HTML;
 use strict;
 use JSON;
-use LWP::UserAgent;
 use URI::Escape;
 use MyPlace::Search;
 use constant {
@@ -151,11 +150,12 @@ sub search {
     my $self = shift;
     unshift @_,$self unless($self and ref $self);
     my($ajax,$data_id,$refer,$keyword,$page,%args)=@_;
-    my $URL = &get_api_url($ajax,$keyword,$page,%args);
+    my ($URL,$BASEURL,$QUERYTEXT) = &get_api_url($ajax,$keyword,$page,%args);
 
     my $data;
     my $results;
     my $status;
+#    print STDERR "[Google $ajax] $QUERYTEXT\n";
     my $res = get_url($URL,$refer);
 
     if($res->is_success) {
