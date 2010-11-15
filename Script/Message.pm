@@ -7,6 +7,7 @@ BEGIN {
     $VERSION        = 1.00;
     @ISA            = qw(Exporter);
     @EXPORT         = qw(&app_ok &app_message &app_error &app_warning &app_abort &color_print);
+    @EXPORT_OK      = map "print_$_",(qw/red blue yellow white black cyan green/);
 }
 
 
@@ -67,8 +68,8 @@ sub AUTOLOAD {
     if($ENV{OS} and $ENV{OS} =~ /windows/i) {
         print STDERR @_;
     }
-    elsif($AUTOLOAD =~ /::app_([\w\d_]+)$/) {
-        my $channel = $CHANNEL{$1} || 'reset';
+    elsif($AUTOLOAD =~ /::(?:app|print)_([\w\d_]+)$/) {
+        my $channel = $CHANNEL{$1} || $1 ; #'reset';
         my $flag = shift(@_);
         if($flag eq '--no-prefix') {
             print STDERR color($channel),@_,color('reset');
