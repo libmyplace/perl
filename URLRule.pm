@@ -12,7 +12,7 @@ BEGIN {
     our ($VERSION,@ISA,@EXPORT,@EXPORT_OK,%EXPORT_TAGS);
     $VERSION        = 1.00;
     @ISA            = qw(Exporter);
-    @EXPORT_OK         = qw($URLRULE_DIRECTORY &parse_rule &apply_rule &get_domain &get_rule_dir &make_url &execute_rule );
+    @EXPORT_OK         = qw($URLRULE_DIRECTORY &parse_rule &apply_rule &get_domain &get_rule_dir &make_url &execute_rule callback_process_result callback_process_data callback_process_passdown );
     @EXPORT         = qw($URLRULE_DIRECTORY &urlrule_process_data &urlrule_process_passdown &urlrule_process_args &urlrule_process_result &urlrule_do_action &urlrule_get_passdown urlrule_parse_pages &urlrule_set_callback);
 }
 
@@ -232,16 +232,15 @@ sub apply_rule {
     }
     app_message($msghd,"Applying it...\n");
     package MyPlace::URLRule::File;
-    {
-        unless(my $do_exit = do $source) { 
-            if($@) {
-                app_error($msghd, "couldn't parse $source:\n$@");
-                return undef;
-            }
-        }
-    }
+    my $do_exit = do $source;
     package MyPlace::URLRule;
-    my %result = MyPlace::URLRule::File::apply_rule($url,$rule);
+    if($@) {
+        app_error($msghd, "couldn't parse $source:\n$@");
+        return undef;
+    }
+    my @result = MyPlace::URLRule::File::apply_rule($url,$rule);
+    return undef unless(@result);
+    my %result = @result;
     if($result{"#use quick parse"}) {
         %result = urlrule_quick_parse('url'=>$url,%result);
     }
@@ -443,10 +442,20 @@ sub urlrule_quick_parse {
 }
 
 
+sub callback_process_result {
+    my $from = shift;
+    app_message("process_result, callback from $from\n") if($from);
+    if($CALLBACK{process_result}) {
+        &{$CALLBACK{process_result}}(@_);
+    }
+    else {
+        goto &urlrule_process_result;
+    }
+}
 
 sub callback_process_data {
     my $from = shift;
-    app_message("callback:$from\n") if($from);
+    app_message("process_data, callback from $from\n") if($from);
     if($CALLBACK{process_data}) {
         &{$CALLBACK{process_data}}(@_);
     }
@@ -456,7 +465,7 @@ sub callback_process_data {
 }
 sub callback_process_passdown {
     my $from = shift;
-    app_message("callback:$from\n") if($from);
+    app_message("process_passdown, callback from $from\n") if($from);
     if($CALLBACK{process_passdown}) {
         &{$CALLBACK{process_passdown}}(@_);
     }
