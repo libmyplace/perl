@@ -198,7 +198,7 @@ sub _run_curl
             push @args,$_;
         }
     }
-#    print join(" ",@CURL,@args),"\n";
+   # print STDERR join(" ",@CURL,@args),"\n";
     open FI,"-|",@CURL,@args;
     my $data = join("",<FI>);
     close FI;
@@ -217,6 +217,9 @@ sub _run_curl
     {
         $exit_code = $exit_code>>8;
     }
+    #if(-f $self->{options}{'cookie-jar'}) {
+    #    system('sed','-i','-e','s/^#HttpOnly_//g',$self->{options}{'cookie-jar'});
+    #}
     return $exit_code,$data;
 }
 
@@ -239,9 +242,14 @@ sub post {
     my @args = ("--url",$url);
     push @args,'--socks5-hostname',$PROXY    if($url =~ $BLOCKED_EXP);
     push @args,"--referer",$referer if($referer);
+    use URI::Escape;    
+
     if(%posts) 
     {
-        push @args, "--data-urlencode",join("&", map({$_=$posts{$_}} keys %posts));
+   #     push @args, "--data",join("&", map({"$_=$posts{$_}"} keys %posts));
+        my $data = join("&", map({"$_=" . uri_escape($posts{$_})} keys %posts));
+        push @args, "--data",$data;
+        print STDERR "Posting:[$data]\nTo $url\n...";
     }
     return $self->_run_curl(@args);
 }

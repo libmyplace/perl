@@ -74,9 +74,9 @@ sub _deep_search {
             }
         }
     }
-    else {
-        push @r,[$root];
-    }
+#    else {
+#        push @r,[$root];
+#    }
     return @r;
 }
 

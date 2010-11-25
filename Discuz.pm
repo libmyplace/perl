@@ -62,6 +62,7 @@ sub _do_login {
                     if(/\s*value=['"]([^'"]+)['"]/) {
                         $value=$1;
                     };
+                    #next if($name =~ m/^(?:handlekey|cookietime|answer|email)$/i);
                     $posts{$name}=$value;
                 }
             }
@@ -82,13 +83,12 @@ sub _do_login {
         return undef;
     }
     $posts{loginfield}="username";
-    $posts{loginsubmit}="true";
+    $posts{loginsubmit}="yes";
     $posts{username}=$user;
     $posts{password}=$pass;
+    $action =~ s/&amp;/&/g if($action);
     $posts{referer}=$referer;
     my @posts = map "$_=$posts{$_}",keys %posts;
-    print STDERR "Posting $action ...\n";
-    print STDERR "Post-Data: ",join("&",@posts),"\n";
     return $CURL->post($action,$referer,%posts);
     #join("&",@posts),"--referer",$referer);
 }
@@ -230,6 +230,7 @@ sub _parse_res_content {
         $fields{loginfield}="username";
         $fields{loginsubmit}="true";
  #   }
+    $login =~ s/&amp;/&/g if($login);
     return ($state,$login,%fields);# if($state);
     return undef;
 }
