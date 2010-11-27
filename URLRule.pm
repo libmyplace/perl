@@ -383,7 +383,7 @@ sub urlrule_quick_parse {
         charset
     /};
     my $http = MyPlace::Curl->new();
-    my (undef,$html) = $http->get($url,(defined $charset ? "charset:$charset" : undef));
+    my (undef,$html) = $http->get($url,(defined $charset ? "charset:$charset" : undef),'--referer',$url);
     my @data;
     my @pass_data;
     my @pass_name;
