@@ -240,6 +240,7 @@ sub apply_rule {
     }
     my @result = MyPlace::URLRule::File::apply_rule($url,$rule);
     return undef unless(@result);
+	return undef unless($result[0]);
     my %result = @result;
     if($result{"#use quick parse"}) {
         %result = urlrule_quick_parse('url'=>$url,%result);

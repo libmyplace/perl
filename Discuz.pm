@@ -203,6 +203,9 @@ sub _parse_res_content {
     $state=0;
     my $content = join("",@_);
 #    foreach my $content (@_) {
+        if($content =~ /\<form\s+[^<>]*\s*action=['"]([^'"]+)['"]/i) {
+            $login = $1;
+        }
         if($content =~ /input\s+[^<>]*\s*name=['"]username['"]/i) {
             $state = 1;
         }
@@ -211,9 +214,6 @@ sub _parse_res_content {
         }
         elsif($content =~ /href="([^"]+\.php\?action=login[^"]*)"/) {
             $state = 3;
-            $login = $1;
-        }
-        if($content =~ /\<form\s+[^<>]*\s*action=['"]([^'"]+)['"]/i) {
             $login = $1;
         }
         my @match = $content =~ /\<((?:input|select)\s+[^<>]+)/g;
