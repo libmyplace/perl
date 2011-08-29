@@ -42,6 +42,7 @@ my %DEFAULT_PARAMS =
     {
         'safe'=>'off',
         'hl'=>'en',
+		'sout'=>'1',
     },
 );
 
@@ -111,6 +112,7 @@ sub get_api_url {
     }
     $api_params{hl} = 'en' unless($api_params{hl});
     $api_params{safe} = 'off' unless($api_params{safe});
+	$api_params{sout} = '1';
 #    my $params = join("&",map ("$_=" . $api_params{$_},keys %api_params));
     return build_url('http://' . &get_google_ip()  . "/$vertical?",\%api_params);
 }
@@ -134,9 +136,13 @@ sub _make_data {
                 "theight"=>$_->[5],
                 "title"=>$_->[6],
                 "filetype"=>$_->[10],
-                "referurl"=>$_->[11],
-                "thumburl"=>$_->[14],
+                "site"=>$_->[11],
+                "thumburl"=>$_->[21],
         );
+		if($cur{clickurl} =~ m/imgurl=([^&]+)&imgrefurl=([^&]+)/) {
+			$cur{url} = $1;
+			$cur{refurl} = $2;
+		}
         if($_->[9] =~ /(\d+)\s*\&times;\s*(\d+)\s*-\s*(\d+[kKmM]?)/) {
             $cur{width}=$1;
             $cur{height}=$2;
@@ -164,7 +170,7 @@ sub search {
             $code = $1;
         }
         $data = eval($code);
-    #    use Data::Dumper;print Dumper($data);
+       #use Data::Dumper;print Dumper($data);
         if(ref $data) {
             $results = _make_data($data);
             $status = 1;
@@ -184,6 +190,7 @@ sub search {
         $status = undef;
         $results = $res->code . " " . $res->status_line;
     }
+#	use Data::Dumper;print Dumper($results);
     if($self and ref $self) {
         $self->{keyword}=$keyword;
         $self->{ajax} = $ajax;
