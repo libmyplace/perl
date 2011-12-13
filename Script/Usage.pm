@@ -8,7 +8,7 @@ BEGIN {
     our ($VERSION,@ISA,@EXPORT,@EXPORT_OK,%EXPORT_TAGS);
     $VERSION        = 1.00;
     @ISA            = qw(Exporter);
-    @EXPORT_OK      = qw(&help_required &help_even_empty &format_help &parse_arg);
+    @EXPORT_OK      = qw(&help_required &help_even_empty &format_help &parse_arg &exit_usage);
 }
 
 my $default_optmsg="-h,--help:Display this text|--edit-me:Edit me";
@@ -61,6 +61,13 @@ sub edit_file {
 sub format_help {
     require MyPlace::Script::Src2Help;
     MyPlace::Script::Src2Help::print_help(@_);
+}
+
+sub exit_usage {
+	my $exit = shift;
+    require MyPlace::Script::Src2Help;
+    MyPlace::Script::Src2Help::print_help(@_);
+	exit $exit;
 }
 
 return 1;
