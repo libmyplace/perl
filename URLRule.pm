@@ -245,6 +245,9 @@ sub apply_rule {
     if($result{"#use quick parse"}) {
         %result = urlrule_quick_parse('url'=>$url,%result);
     }
+	foreach(@{$result{pass_data}},@{$result{data}}) {
+		s/&amp;/&/g;
+	}
     if($result{work_dir}) {
         $result{work_dir} = &unescape_text($result{work_dir});
     }
@@ -323,7 +326,7 @@ sub urlrule_get_passdown {
     return unless($result_ref->{pass_data});
     my %rule = %{$rule_ref};
     my %result = %{$result_ref};
-    my $level = $result{level} ? $result{level} : $result{same_level} ? $rule{"level"} : $rule{"level"} - 1;
+    my $level = defined $result{level} ? $result{level} : $result{same_level} ? $rule{"level"} : $rule{"level"} - 1;
     my $action = $rule{"action"};
     my @args = $rule{"args"} ? @{$rule{"args"}} : ();
     if(ref $result{pass_data} eq 'SCALAR') {
@@ -388,26 +391,33 @@ sub urlrule_quick_parse {
     my @data;
     my @pass_data;
     my @pass_name;
+	my %h_data;
+	my %h_pass;
     $data_map = '$1' unless($data_map);
     $pass_map = '$1' unless($pass_map);
+	my %LOCAL_VAR;
     $pass_name_map = $pass_name_exp unless($pass_name_map);
     if($title_exp) {
         $title_map = '$1' unless($title_map);
         if($html =~ m/$title_exp/g) {
-            $title = eval($title_map);
+            $title = eval $title_map;
         }
     }
     if($data_exp) {
         while($html =~ m/$data_exp/g) {
-            push @data,eval($data_map);
+			my $r = eval $data_map;
+			next if($h_data{$r});
+            push @data,$r;
+			$h_data{$r} = 1;
         }
     }
     if($pass_exp) {
         while($html =~ m/$pass_exp/g) {
-            push @pass_data,eval($pass_map);
-            if($pass_name_map) {
-                push @pass_name,eval($pass_name_map);
-            }
+            my $r = eval $pass_map;
+			next if($h_pass{$r});
+            push @pass_data,$r;
+			$h_pass{$r} = 1;
+            push @pass_name,eval $pass_name_map if($pass_name_map);
         }
     }
     elsif($pages_exp) {
@@ -417,9 +427,9 @@ sub urlrule_quick_parse {
         my $suf = "";
         while($html =~ m/$pages_exp/g) {
             if(eval($pages_map) > $last) {
-                    $last = eval($pages_map);
-                    $pre = eval($pages_pre) if($pages_pre);
-                    $suf = eval($pages_suf) if($pages_suf);
+                    $last = eval $pages_map;
+                    $pre = eval $pages_pre  if($pages_pre);
+                    $suf = eval $pages_suf if($pages_suf);
             }
         }
         if($last >= $pages_start) {
@@ -427,8 +437,9 @@ sub urlrule_quick_parse {
         }
         push @pass_data,$url;
     }
-    @data = delete_dup(@data) if(@data);
-    @pass_data = delete_dup(@pass_data) if(@pass_data and (!@pass_name));
+#	use Data::Dumper;die(Dumper(\%h_pass));
+#    @data = delete_dup(@data) if(@data);
+#    @pass_data = delete_dup(@pass_data) if(@pass_data and (!@pass_name));
     return (
         count=>scalar(@data),
         data=>[@data],

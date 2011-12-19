@@ -32,7 +32,12 @@ my @GOOGLE_IP = (
     '209.85.227.103',
 );
 #@GOOGLE_IP = ('images.google.com');
-
+@GOOGLE_IP = (
+	'www.google.com.hk',
+	'www.google.com',
+	'www.google.co.jp',
+	'www.google.co.kr',
+);
 #http://images.google.com/images?hl=en&newwindow=1&safe=off&as_st=y&tbs=isch%3A1%2Cisz%3Alt%2Cislt%3Axga&sa=1&q=%22Michelle+Marsh%22+nude&aq=f&aqi=&aql=&oq=&gs_rfai=
 #http://www.google.com/images?q=Jordan+Carver&um=1&hl=en&newwindow=1&safe=off&tbs=isch:1,isz:lt,islt:2mp
 my %DEFAULT_PARAMS = 
@@ -42,7 +47,7 @@ my %DEFAULT_PARAMS =
     {
         'safe'=>'off',
         'hl'=>'en',
-		'sout'=>'1',
+		'sout'=>'0',
     },
 );
 
@@ -125,7 +130,7 @@ sub new {
 sub _make_data {
     my $org = shift;
     my @result;
-    return \@result unless($org and @{$org});
+    return unless($org and @{$org});
     foreach(@{$org}) {
         my %cur = (
                 "clickurl"=>$_->[0],
@@ -166,13 +171,40 @@ sub search {
 
     if($res->is_success) {
         my $code = $res->content;
+		
         if($code and $code =~ m/\;\s*dyn\.setResults\((.+?)\)\s*\;\s*/s) {
             $code = $1;
+			$data = eval($code);
+			$results = _make_data($data);
         }
-        $data = eval($code);
+		else {
+#<a href="/imgres?imgurl=http://www.wpclipart.com/toys/blocks/abc_blocks.png&amp;imgrefurl=http://www.wpclipa    rt.com/toys/blocks/abc_blocks.png.html&amp;usg=__g0pgtIFbE5GZX_wJAz9ADvAIo9s=&amp;h=389&amp;w=400&amp;sz=15&amp;hl=en&amp;start=2&amp;zoom=1&amp;tbnid=z9ypytoY8udP6M:&amp;tb    nh=121&amp;tbnw=124&amp;ei=m7boTp2GAqiuiQeo1szpCA&amp;prev=/images%3Fq%3D%2522abc%2522%26hl%3Den%26newwindow%3D1%26safe%3Doff%26ndsp%3D18%26sout%3D1%26tbm%3Disch&amp;itbs=1
+			foreach(split('\n',$code)) {
+				while(m/href="([^"]+imgurl=[^"]+)"/g) {
+					my $link = $1;
+					$link =~ s/^[^\?]+\?//;
+					my @params = split('&amp;',$link);
+					my %cur;
+					foreach(@params) {
+						if(m/^([^=]+)=(.+)$/) {
+							$cur{$1} = $2;
+						}
+						$cur{$_}='';
+					}
+					push @{$results},{
+							url=>$cur{imgurl},
+							refurl=>$cur{imgrefurl},
+							height=>$cur{h},
+							width=>$cur{w},
+							size=>$cur{sz},
+							theight=>$cur{tbnh},
+							twidth=>$cur{tbnw}
+						};
+				}
+			}
+		}
        #use Data::Dumper;print Dumper($data);
-        if(ref $data) {
-            $results = _make_data($data);
+        if($results) {
             $status = 1;
         }
         elsif($!) {

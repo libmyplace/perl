@@ -82,3 +82,44 @@ sub AUTOLOAD {
     return undef;
 }
 return 1;
+
+__END__
+=pod
+
+=head1 NAME
+
+MyPlace::Script::Message - Colorized messages outputing
+
+=head1 SYNOPSIS
+
+use MyPlace::Script::Message;
+
+app_message("myprogram","Hello, World\n");
+
+app_message("--no-prefix","Hello, World\n");
+
+=head1 Functions
+
+=over
+
+=item B<app_message>
+
+=item B<app_warning>
+
+=item B<app_error>
+
+=item B<app_ok>
+
+=item B<app_abort>
+
+=item B<app_message2>
+
+=back
+
+=head1  AUTHOR
+
+xiaoranzzz <xiaoranzzz@myplace.hell>
+
+=cut
+
+
