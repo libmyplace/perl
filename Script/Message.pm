@@ -6,7 +6,7 @@ BEGIN {
     our ($VERSION,@ISA,@EXPORT,@EXPORT_OK,%EXPORT_TAGS);
     $VERSION        = 1.00;
     @ISA            = qw(Exporter);
-    @EXPORT         = qw(&app_ok &app_message &app_error &app_warning &app_abort &color_print);
+    @EXPORT         = qw(&app_ok &app_message &app_message2 &app_error &app_warning &app_abort &color_print &colored &color &app_prompt);
     @EXPORT_OK      = map "print_$_",(qw/red blue yellow white black cyan green/);
 }
 
@@ -24,7 +24,14 @@ my %CHANNEL = (
     "error"=>"red",
     "abort"=>"red"
 );
-
+no warnings;
+sub color {
+	goto &Term::ANSIColor::color;
+}
+sub colored {
+	goto &Term::ANSIColor::colored;
+}
+use warnings;
 sub color_print($$@) {
     my $out=shift;
     my $ref=ref $out ? $out : \$out;
@@ -40,7 +47,16 @@ sub color_print($$@) {
         print $ref color($color),@_,color('reset') if(@_);
     }
 }
-
+sub app_prompt {
+	my ($subject,@texts) = @_;
+	if($subject) {
+		$subject .= ': '; 
+	}
+	else {
+		$subject = '';
+	}
+	print STDERR $prefix,$subject,color($CHANNEL{message}),@texts,color('RESET');
+}
 #sub app_error {
 #    print STDERR $prefix;
 #    color_print *STDERR,'red',@_;
@@ -68,15 +84,22 @@ sub AUTOLOAD {
     if($ENV{OS} and $ENV{OS} =~ /windows/i) {
         print STDERR @_;
     }
-    elsif($AUTOLOAD =~ /::(?:app|print)_([\w\d_]+)$/) {
-        my $channel = $CHANNEL{$1} || $1 ; #'reset';
-        my $flag = shift(@_);
-        if($flag eq '--no-prefix') {
-            print STDERR color($channel),@_,color('reset');
-        }
-        else {
-            print STDERR $prefix,color($channel),$flag,@_,color('reset');
-        }
+    elsif($AUTOLOAD =~ /::(app|print)_([\w\d_]+)$/) {
+		my $need_header = ($1 eq 'app');
+        my $channel = $CHANNEL{$2} || $2 || 'RESET';
+		my $flag = shift(@_);
+		if($flag eq '--no-prefix') {
+			$need_header = undef;
+		}
+		else {
+			unshift @_,$flag;
+		}
+		if($need_header) {
+			print STDERR $prefix,color($channel),@_,color('RESET');
+		}
+		else {
+			print STDERR color($channel),@_,color('RESET');
+		}
         return 1;
     }
     return undef;
