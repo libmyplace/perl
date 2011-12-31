@@ -219,7 +219,7 @@ sub parse_url {
 	my $name = shift;
 	my $template = shift;
 	my $project = shift;
-	next unless($template);
+	return unless($template);
 	#if($template =~ m/\/$/) {
 	#	$template = $template ."$name"; 
 	#}
@@ -247,7 +247,10 @@ sub parse_url {
 	}
 	if($template =~ m/\/$/) {
 		my $default_entry = $name;
-		if(ref $host) {
+		if($project->{default_entry}) {
+			$default_entry = $project->{default_entry};
+		}
+		elsif(ref $host) {
 			if($host->{map} and $host->{map} eq 'localname') {
 				$default_entry = $project->{localname};
 			}
@@ -335,6 +338,7 @@ sub new_repo {
 	}
 	if($project->{"mirrors"}) {
 		foreach(@{$project->{"mirrors"}}) {
+			next unless($_);
 			my $url = $self->parse_url($r{name},$_,\%r);
 			push @{$r{$url->{type}}},$url;
 		}

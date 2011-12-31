@@ -1,7 +1,6 @@
 #!/usr/bin/perl -w
 package MyPlace::Google::Search::HTML;
 use strict;
-use JSON;
 use URI::Escape;
 use MyPlace::Search;
 use constant {
@@ -30,9 +29,9 @@ my @GOOGLE_IP = (
     '209.85.227.100',
     '209.85.227.104',
     '209.85.227.103',
-);
+#);
 #@GOOGLE_IP = ('images.google.com');
-@GOOGLE_IP = (
+#@GOOGLE_IP = (
 	'www.google.com.hk',
 	'www.google.com',
 	'www.google.co.jp',
@@ -69,7 +68,6 @@ my %IMAGE_DMS_MAP = (
         '>9600x7200'=>'70mp',
 );
 
-my $HTTP;
 
 sub get_google_ip {
    return $GOOGLE_IP[int(rand(@GOOGLE_IP))]; 
@@ -161,15 +159,20 @@ sub search {
     my $self = shift;
     unshift @_,$self unless($self and ref $self);
     my($ajax,$data_id,$refer,$keyword,$page,%args)=@_;
-    my ($URL,$BASEURL,$QUERYTEXT) = &get_api_url($ajax,$keyword,$page,%args);
+    my ($URL,$BASEURL,$QUERYTEXT);
 
     my $data;
     my $results;
     my $status;
 #    print STDERR "[Google $ajax] $QUERYTEXT\n";
-    my $res = get_url($URL,$refer);
-
-    if($res->is_success) {
+    my $res;
+	foreach(4,3,2,1,0) {
+		($URL,$BASEURL,$QUERYTEXT)= &get_api_url($ajax,$keyword,$page,%args);
+		$res = get_url($URL,$refer);
+		last if($res->is_success);
+		print STDERR "Retry[$_]\n";
+	}
+    if($res and $res->is_success) {
         my $code = $res->content;
 		
         if($code and $code =~ m/\;\s*dyn\.setResults\((.+?)\)\s*\;\s*/s) {

@@ -32,13 +32,16 @@ sub build_url {
     my ($base,$p_ref) = @_;
     my %params = %{$p_ref};
     my $text =join("&",map ("$_=" . $params{$_},keys %params));
-    return $base . $text, $base, $text;
+	if(wantarray) {
+	    return $base . $text, $base, $text;
+	}
+	return $base . $text;
 }
 sub get_url {
     my ($URL,$referer,$decoder) = @_;
     print STDERR "$URL...";
     if(!$HTTP) {
-        $HTTP = LWP::UserAgent->new();
+        $HTTP = LWP::UserAgent->new(timeout=>60);
         $HTTP->agent("Mozilla/5.0");# (X11; U; Linux i686; en-US; rv:1.9.0.3) Gecko/2008092416 Firefox/3.0.3 Firefox/3.0.1");
     }
     my $res = $HTTP->get($URL,"referer"=>$referer ? $referer : $URL);
