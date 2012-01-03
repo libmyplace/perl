@@ -45,10 +45,14 @@ sub get_parent($) {
     return $fn;
 }
 
-sub get_uniqname($$) {
+sub get_uniqname {
     my $base = shift;
     my $ext = shift;
     $base = "" unless($base);
+	if((!$ext) and $base =~ m/^(.*)(\.[^\.]*)$/) {
+		$base = $1;
+		$ext = $2;
+	}
     $ext = "" unless($ext);
     return "$base$ext" unless("$base$ext" eq "" or -f "$base$ext");
     my $idx = 1;
