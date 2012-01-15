@@ -27,10 +27,10 @@ my @OPTIONS = qw/
               /;
 
 my $URL_DATABASE_FILE = 'URLS.txt';
-my %URL_DATABASE;
 
 sub load_database {
 	my $self = shift;
+	$self->{database} = {} unless($self->{database});
     open FI,"<",$URL_DATABASE_FILE or return;
     while(<FI>) {
         chomp;
@@ -41,14 +41,19 @@ sub load_database {
 sub check_database {
 	my $self = shift;
     my $url = shift;
-	return undef unless($self->{database});
-	return 1 if($self->{database}->{$url});
-	$self->{database}->{$url} = 1;
+#	return undef unless($self->{database});
+	my $entry = $url;
+	if(ref $url) {
+		$entry = join("",@{$url});
+	}
+	return 1 if($self->{database}->{$entry});
+	$self->{database}->{$entry} = 1;
 	return undef;
 }
 sub save_database {
 	my $self = shift;
 	return 1 unless($self->{database});
+	app_message("Save URLs database...\n");
     open FO,">",$URL_DATABASE_FILE or return;
     foreach (keys %{$self->{database}}) {
         print FO $_,"\n";
@@ -182,17 +187,25 @@ sub add {
 		app_error("Error nothing to add\n");
 		return undef;
 	}
-    elsif($self->check_database($_)) {
-        app_warning("[Ignored, In DATABASE]$_\n");
+	my $url = $task;
+	my $name = "";
+	if($task =~ /^([^\t]+)\t+(.+)$/) {
+		$url = $1;
+		$name = $2;
+    }
+    if($self->check_database("$url$name")) {
+        app_warning("[Ignored, In DATABASE]$url\n");
 		return undef;
     }
-    elsif($_ =~ /^([^\t]+)\t+(.+)$/) {
-		push @{$self->{tasks}},[$1,$2];
-    }
-	else {
-		push @{$self->{tasks}},$_;
-    }
+	push @{$self->{tasks}},($name ? ([$url,$name]) : $url);
 	return $self->{tasks};
+}
+
+sub reset {
+	my $self = shift;
+	$self->{tasks} = [];
+	$self->{IAMKILLED} = 0;
+	return $self;
 }
 
 sub execute {
@@ -204,7 +217,9 @@ sub execute {
 	    Getopt::Long::GetOptionsFromArray(@_,\%OPTS,@OPTIONS);
 		MyPlace::Usage::Process(\%OPTS,$VERSION);
 	}
+	#use Data::Dumper;print STDERR Data::Dumper->Dump([\%OPTS],['*OPTS']);
 	%OPTS = (%{$self->{options}},%OPTS);
+	#use Data::Dumper;print STDERR Data::Dumper->Dump([\%OPTS],['*OPTS']);
 	$self->add($_) foreach(@_);
 	my $def_mul=3;
 	my $createdir = $OPTS{"createdir"} ? $OPTS{"createdir"} : 0;
@@ -240,7 +255,7 @@ sub execute {
 		return 0;
 	}
 	app_message("Initializing...\n");
-	#para_init $muldown;
+	para_init $muldown;
 	use MyPlace::Program::Download;
 	my $dl = new MyPlace::Program::Download (
 		-maxtime=>$OPTS{maxtime} || '0',
@@ -248,7 +263,11 @@ sub execute {
 		"-d",
 	);
 	my %QUEUE;
+	app_message("Have $count tasks total\n");
 	while (@{$self->{tasks}}) {
+		if($self->{IAMKILLED}) {
+			last;
+		}
 		my $_ = shift @{$self->{tasks}};
 		$index++;
 		my $msghd = "${prefix}\[$index/$count]";
@@ -263,8 +282,8 @@ sub execute {
 			$url = $_;
 			$filename = "";
 		}
-		app_message($msghd,"Queuing $url...\n");
-		app_message("\t$filename\n") if($filename);
+#		app_message($msghd,"Queuing $url...\n");
+#		app_message("  => $filename\n") if($filename);
 	    if($url =~ m/^#BATCHGET:chdir:(.+)$/) {
 	        my $w = $1;
 	        $w =~ s/[:\?\*]+//g;
@@ -289,22 +308,43 @@ sub execute {
 	            next;
 			}
 			if($logger) {system($logger,$filename,$url);}
-			my $exitval = $dl->execute(
+			para_queue (\&download,$self,$dl,
 				'-saveas'=>$filename,
-				#'-n'=>$msghd,
+				'-n'=>$msghd,
 				'-r'=>$OPTS{'referer'} || $url,
 				'-url'=>$url
 			);
-			if($exitval == 2) {
-				app_warning("Child process killed\n");
-				return 2;
-			}
+#			my $exitval = $dl->execute(
+#				'-saveas'=>$filename,
+#				'-n'=>$msghd,
+#				'-r'=>$OPTS{'referer'} || $url,
+#				'-url'=>$url
+#			);
+#			if($exitval == 2) {
+#				app_warning("Child process killed\n");
+#				return 2;
+#			}
 	    }
 	}
+	para_cleanup();
 	chdir $PWD;
-#	para_cleanup();
 	$self->save_database() if($urlhist);
+	if($self->{IAMKILLED}) {
+		app_warning("I am killed!\n");
+		$self->{IAMKILLED} = 0;
+		return 2;
+	}
 	return 0;
+}
+
+sub download {
+	my $self = shift;
+	my $dl = shift;
+	my $exitval = $dl->execute(@_);
+	if($exitval == 2) {
+		$self->{IAMKILLED} = 1;
+	}
+	return $exitval;
 }
 
 1;

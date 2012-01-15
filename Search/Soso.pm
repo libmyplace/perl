@@ -17,6 +17,7 @@ BEGIN {
     @EXPORT_OK      = qw(search_images);
 }
 
+#http://image.soso.com/image.cgi?_=1326653407401&w=%B3%BF%C4%DD&icext=1&ic=one&pg=0&ity=0&scr=&ext=0&mc=0&simi=0&fid=&sf=0&wpic=0&tid=
 my %FUNCTION = (
     'images'=> {
         'base'=>'http://pic.sogou.com/d?w=05009900&',

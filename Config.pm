@@ -29,9 +29,8 @@ sub list {
     my ($self,@target) = @_;
     my @r;
     foreach(@target) {
-        my ($path,$data,$key) = @{$_};
-        $path = join(" -> ",@{$path});
-        push @r,$path;
+		my @path = @{$_};
+        push @r,join(" -> ",@path);
     }
     return @r;
 }
@@ -39,12 +38,67 @@ sub read {
     my ($self,@target) = @_;
     my @r;
     foreach(@target) {
-        my ($path,$data,$key) = @{$_};
-        if($data->{$key}) {
-            push @r,[$path,[keys %{$data->{$key}}]];
-        }
+		my @path = @{$_};
+		my $data = $self->{data};
+		foreach(@path) {
+			if($data->{$_}) {
+				$data = $data->{$_}
+			}
+			else {
+				$data = undef;	
+				last;
+			}
+		}
+		if($data) {
+			push @r,[\@path,[keys %{$data}]];
+		}
     }
     return @r;
+}
+sub array_to_hash {
+	my $self = shift;
+	my $array = shift;
+	return undef unless($array);
+	return undef unless(@{$array});
+	my %hash;
+	foreach(@{$array}) {
+		$hash{$_} = {};
+	}
+	return \%hash;
+}
+sub get {
+	my $self = shift;
+	my @r;
+	foreach my $path (@_) {
+		my ($data) = $self->lookup_to($path);
+		if($data) {
+			push @r,[$path,keys %{$data}];
+		}
+		else {
+			push @r,[$path,undef];
+		}
+	}
+	return @r;
+}
+sub set {
+	my $self = shift;
+	my $value = shift;
+	if(ref $value) {
+		$value = $self->array_to_hash($value);
+	}
+	else {
+		$value = $self->array_to_hash([$value]);
+	}
+	my @r;
+	foreach my $path (@_) {
+		my ($data,$pdata,$key) = $self->lookup_to($path,1);
+		if($pdata and $key) {
+			$pdata->{$key} = $value;
+			$self->{dirty} = 1;
+			push @r,$data;
+		}
+	}
+	return @r;
 }
 
 sub add {
@@ -86,16 +140,33 @@ sub get_records {
     my @records;
 #    use Data::Dumper;print Dumper(\@target);
     foreach(@target) {
-        my ($path,$entry,$key) = @{$_};
-        my @subpath = _deep_search($entry->{$key});
-        if(@subpath) {
-            foreach(@subpath) {
-                push @records,[@{$path},@{$_}];
-            }
-        }
-        else {
-            push @records,$path;
-        }
+		my @path = @{$_};
+		my $entry = $self->{data};
+		my $match = 0;
+		foreach(@path) {
+			if(!$entry->{$_}) {
+				$match = 0;
+				last;
+			}
+			else {
+				$entry = $entry->{$_};
+			}
+			$match = 1;
+		}
+		if($match) {
+			my @r = _deep_search($entry);
+			if(@r) {
+				foreach(_deep_search($entry)) {
+					push @records, [@path,@{$_}];
+				}
+			}
+			else {
+				push @records,\@path;
+			}
+		}
+		else {
+			push @records,\@path;
+		}
     }
     return @records;
 }
@@ -128,22 +199,60 @@ sub propset {
     $self->{dirty}=1;
     return $p;
 }
+
+sub lookup_to {
+	my $self = shift;
+	my $path = shift;
+	my $auto_create = shift;
+	return undef unless($path and ref $path);
+	my $data = $self->{data};
+	my $pdata = undef;
+	my $lastkey = undef;
+	my $found = 0;
+	foreach(@{$path}) {
+		if($data->{$_}) {
+			$pdata = $data;
+			$lastkey = $_;
+			$data = $data->{$_};
+		}
+		elsif($auto_create) {
+			$data->{$_} = {};
+			$pdata = $data;
+			$lastkey = $_;
+			$data = $data->{$_};
+		}
+		else {
+			$found = 0;
+			last;
+		}
+		$found = 1;
+	}
+	if($found) {
+		return $data,$pdata,$lastkey;
+	}
+	else {
+		return undef;
+	}
+}
+
 sub delete {
     my ($self,$userdata,@target) = @_;
     my $status;
     if($userdata) {
-        foreach(@target) {
-            if(defined $_->[1]->{$_->[2]}->{$userdata}) {
-                delete $_->[1]->{$_->[2]}->{$userdata};
+        foreach my $path (@target) {
+			my ($data,$pdata,$lastkey) = $self->lookup_to($path);
+			if($data) {
+				delete $data->{$userdata};
                 $self->{dirty}=1;
                 $status=1;
-            }
+			}
         }
     }
     else {
-        foreach(@target) {
-            if(defined $_->[1]->{$_->[2]}) {
-                delete $_->[1]->{$_->[2]};
+        foreach my $path (@target) {
+			my ($data,$pdata,$lastkey) = $self->lookup_to($path);
+			if($pdata) {
+				delete $pdata->{$lastkey};
                 $self->{dirty}=1;
                 $status=1;
             }
@@ -155,17 +264,34 @@ sub write {
     my ($self,$userdata,@target) = @_;
     return unless($userdata);
     my $status;
+#	use Data::Dumper;print Data::Dumper->Dump([$self->{data}],['*data']);
     foreach(@target) {
-        $_->[1]->{$_->[2]} = {$userdata=>{}};
+		my @path = @{$_};
+		my $data = \%{$self->{data}};
+		foreach(@path) {
+			if(!$data->{$_}) {
+				$data->{$_} = {};
+			}
+			$data = \%{$data->{$_}};
+		}
+		$data->{$userdata} = {};
         $self->{dirty}=1;
         $status = 1;
     }
+#	use Data::Dumper;print Data::Dumper->Dump([$self->{data}],['*data']);
     return $status;
 }
 
 sub _get_query {
     my $query=shift;
     return unless $query;
+	if(ref $query) {
+		my @queries;
+		foreach(@{$query}) {
+			push @queries,_get_query($_);
+		}
+		return @queries;
+	}
     if($query =~ /^\$/) {
         my $text = '';
         foreach my $idx (1..10) {
@@ -192,7 +318,7 @@ sub _get_query {
 }
 
 sub _make_query {
-    my ($self,$path,$data,@query)=@_;
+    my ($self,$path,$data,$auto_create,@query)=@_;
     return unless(defined $data);
     return unless(@query);
 #    $path = "$path->" if($path);
@@ -207,11 +333,11 @@ sub _make_query {
             foreach my $key (keys %{$data}) {
                 if($key =~ $exp) {
                     if(@query) {
-                        my @r = $self->_make_query([@{$path},$key],$data->{$key},@query);
+                        my @r = $self->_make_query([@{$path},$key],$data->{$key},$auto_create,@query);
                         push @results,@r if(@r);
                     }
                     else {
-                        push @results,[[@{$path},$key],$data,$key];
+                        push @results,[@{$path},$key];
                     }
                 }
             }
@@ -222,11 +348,11 @@ sub _make_query {
                 if($key eq $exp) {
                     $match = 1;
                     if(@query) {
-                        my @r = $self->_make_query( [@{$path},$key],$data->{$key},@query);
+                        my @r = $self->_make_query( [@{$path},$key],$data->{$key},$auto_create,@query);
                         push @results,@r if(@r);
                     }
                     else {
-                        push @results,[ [@{$path},$key],$data,$key];
+                        push @results,[@{$path},$key];
                     }
                     last;
                 }
@@ -235,14 +361,15 @@ sub _make_query {
                 if(@query) {
                     $data->{$exp} = {};
                     $self->{dirty} = 1;
-                    my @r = $self->_make_query([@{$path},$exp],$data->{$exp},@query);
+                    my @r = $self->_make_query([@{$path},$exp],$data->{$exp},$auto_create,@query);
                     push @results,@r if(@r);
                 }
-                else {
-                    #push @results,[[@{$path},$exp],$data,$exp];
+                elsif($auto_create) {
+                    push @results,[@{$path},$exp];
                 }
             }
         }
+	#print Data::Dumper->Dump([\@results],['*results']);
     return @results;
 }
 
@@ -395,9 +522,9 @@ sub save {
 }
 
 sub query {
-    my($self,$text) = @_;
+    my($self,$text,$auto_create) = @_;
     my @querys = _get_query($text);
-    return $self->_make_query([],$self->{data},@querys);
+    return $self->_make_query([],$self->{data},$auto_create,@querys);
 }
 
 1;

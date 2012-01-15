@@ -17,14 +17,15 @@ my $HTTP;
 
 sub build_keyword {
     my $keyword = shift;
+	return $keyword;
     my $no_or = shift;
     my @keywords;
-    while($keyword =~ m/["']([^"']+)["']|([^\s]+)/g)
+    while($keyword =~ m/(["'])([^\1]+)\1|([^\s]+)/g)
     {
-        my $word = $1 ? $1 : $2;
+        my $word = $2 ? $2 : $3;
         next unless($word);
         $word =~ s/\s+/+/g;
-        push @keywords,"\"$word\"";
+        push @keywords,$word;
     }
     return $no_or ? join("+",@keywords) : join("+OR+",@keywords);
 }
@@ -38,14 +39,14 @@ sub build_url {
 	return $base . $text;
 }
 sub get_url {
-    my ($URL,$referer,$decoder) = @_;
-    print STDERR "$URL...";
+    my ($URL,$referer,$decoder,$verbose) = @_;
+    print STDERR "$URL..." if($verbose);
     if(!$HTTP) {
         $HTTP = LWP::UserAgent->new(timeout=>60);
         $HTTP->agent("Mozilla/5.0");# (X11; U; Linux i686; en-US; rv:1.9.0.3) Gecko/2008092416 Firefox/3.0.3 Firefox/3.0.1");
     }
     my $res = $HTTP->get($URL,"referer"=>$referer ? $referer : $URL);
-    print STDERR " [" . $res->code . "]\n";
+    print STDERR " [" . $res->code . "]\n" if($verbose);
     if(wantarray) {
         return $res, ($decoder ? $decoder->decode($res->content) : $res->content);
     }

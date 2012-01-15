@@ -12,7 +12,7 @@ use constant {
     IMAGE_DATA_ID=>'results',
 };
 my @GOOGLE_IP = (
-    'images.google.com',
+ #   'images.google.com',
     '72.14.204.95',
     '72.14.204.96',
     '72.14.204.98',
@@ -21,21 +21,21 @@ my @GOOGLE_IP = (
     '72.14.204.104',
     '72.14.204.147',
     '72.14.204.148',
-    '72.14.213.103',
-    '74.125.71.106',
+  #  '72.14.213.103',
+  # '74.125.71.106',
     '209.85.229.99',
     '209.85.225.105',
     '209.85.227.147',
     '209.85.227.100',
     '209.85.227.104',
     '209.85.227.103',
-#);
+);
 #@GOOGLE_IP = ('images.google.com');
-#@GOOGLE_IP = (
-	'www.google.com.hk',
+@GOOGLE_IP = (
+#	'www.google.com.hk',
 	'www.google.com',
-	'www.google.co.jp',
-	'www.google.co.kr',
+#	'www.google.co.jp',
+#	'www.google.co.kr',
 );
 #http://images.google.com/images?hl=en&newwindow=1&safe=off&as_st=y&tbs=isch%3A1%2Cisz%3Alt%2Cislt%3Axga&sa=1&q=%22Michelle+Marsh%22+nude&aq=f&aqi=&aql=&oq=&gs_rfai=
 #http://www.google.com/images?q=Jordan+Carver&um=1&hl=en&newwindow=1&safe=off&tbs=isch:1,isz:lt,islt:2mp
@@ -73,6 +73,28 @@ sub get_google_ip {
    return $GOOGLE_IP[int(rand(@GOOGLE_IP))]; 
 }
 
+sub import {
+#	use Data::Dumper;print Data::Dumper->Dump([\@_],[qw/*_/]),"\n";
+	my $self = shift;
+	foreach(@_) {
+		$main::{"$_"} = $MyPlace::Google::Search::HTML::{"$_"};
+	}
+#	use Data::Dumper;print Data::Dumper->Dump([\%{main::}, \%MyPlace::Google::Search::HTML::],[qw/*main *self/]),"\n";
+}
+
+sub test_google_ip  {
+	foreach(@GOOGLE_IP) {
+		print STDERR "Testing $_ ...";
+		if(system("ping -c 4 \"$_\" 1>/dev/null") == 0) {
+			print STDERR "\t\[OK]\n"
+		}
+		else {
+			print STDERR "\t\[Failed]\n"
+		}
+
+	}
+}
+
 sub get_api_url {
     my ($vertical,$keyword,$page,%params) = @_;
     my %api_params;
@@ -86,6 +108,9 @@ sub get_api_url {
         elsif($_ eq 'lang' or $_ eq 'region') {
             $api_params{hl} = $params{$_};
         }
+		elsif($_ eq 'page') {
+			$page = $params{$_};
+		}
         else {
             $api_params{$_} = $params{$_}; 
         }
@@ -168,7 +193,7 @@ sub search {
     my $res;
 	foreach(4,3,2,1,0) {
 		($URL,$BASEURL,$QUERYTEXT)= &get_api_url($ajax,$keyword,$page,%args);
-		$res = get_url($URL,$refer);
+		$res = get_url($URL,$refer,undef,1);
 		last if($res->is_success);
 		print STDERR "Retry[$_]\n";
 	}

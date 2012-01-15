@@ -6,7 +6,7 @@ BEGIN {
     our ($VERSION,@ISA,@EXPORT,@EXPORT_OK,%EXPORT_TAGS);
     $VERSION        = 1.00;
     @ISA            = qw(Exporter);
-    @EXPORT         = qw(&app_ok &app_message &app_message2 &app_error &app_warning &app_abort &color_print &colored &color &app_prompt);
+    @EXPORT         = qw(&app_ok &app_message &app_message2 &app_error &app_warning &app_abort &color_print &colored &color &app_prompt &with_color);
     @EXPORT_OK      = map "print_$_",(qw/red blue yellow white black cyan green/);
 }
 
@@ -57,6 +57,21 @@ sub app_prompt {
 	}
 	print STDERR $prefix,$subject,color($CHANNEL{message}),@texts,color('RESET');
 }
+
+sub with_color {
+	my @texts = @_;
+	foreach(@texts) {
+		s/(?:COLOR|\^)\(([A-Z]+)\)/color("$1")/ge;
+	}
+	return @texts;
+}
+
+sub new {
+	my $class = shift;
+	my $self = bless {@_},$class;
+	return $self;
+}
+
 #sub app_error {
 #    print STDERR $prefix;
 #    color_print *STDERR,'red',@_;

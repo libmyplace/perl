@@ -29,7 +29,7 @@ sub new_process {
         return $running;
     }
     else {
-        exit system(@_);
+        exit &invoke(@_);
     }
 }
 
@@ -68,9 +68,20 @@ sub para_init {
     return 1;
 }
 
+sub invoke {
+	my $program = shift;
+	my @args = @_;
+	my $type = ref $program;
+	if($type eq 'CODE') {
+		return &$program(@args);
+	}
+	else {
+		return system($program,@args) == 0;
+	}
+}
 
 sub para_queue {
-    return system(@_) if $limit<2;
+    return &invoke(@_) if $limit<2;
     if($running>=$limit) {
         wait_process();
     }

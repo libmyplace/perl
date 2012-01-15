@@ -43,7 +43,7 @@ my @CURL = qw{
 		--fail --globoff --location
 		--user-agent Mozilla/5.0
 		--progress-bar --create-dirs
-		--connect-timeout 15
+		--connect-timeout 60
 };
 sub new {
 	my $class = shift;
@@ -140,9 +140,18 @@ sub _process {
         return 2 if($r==2); #/KILL,TERM,USERINT;
         $r = $r>>8;
         #2 =>
-        #22 => Request Error 404,403
+        #22 => Request Error 404,403,400
         #56 => Recv failure: Connection reset by peer
-        return $r if($r == 2 or $r == 22 or $r == 56 or $r == 6);
+		#47 => Reach max redirects.
+		#52 => curl: (52) Empty reply from server
+        return $r if(
+			$r == 2 
+			or $r == 22 
+			or $r == 56 
+			or $r == 6 
+			or $r=47
+			or $r = 52
+			);
         app_warning "\rdownload:error($r), wait 1 second,retry $taskname\n";
         sleep 1;
     }
