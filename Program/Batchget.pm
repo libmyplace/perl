@@ -23,7 +23,7 @@ my @OPTIONS = qw/
                 autoname|a cookie|b=s createdir|d ext|e=s 
                 fullname|f logger|L=s maxtime|M=i maxtask|m=i
                 taskname|n=s referer|r=s workdir|w=s urlhist|U
-                no-clobber|nc|c numlen|i=i
+                no-clobber|nc|c numlen|i=i dl-force|dl-f
               /;
 
 my $URL_DATABASE_FILE = 'URLS.txt';
@@ -312,7 +312,8 @@ sub execute {
 				'-saveas'=>$filename,
 				'-n'=>$msghd,
 				'-r'=>$OPTS{'referer'} || $url,
-				'-url'=>$url
+				'-url'=>$url,
+				$OPTS{'dl-force'} ? '-f' : (),
 			);
 #			my $exitval = $dl->execute(
 #				'-saveas'=>$filename,

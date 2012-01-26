@@ -135,8 +135,14 @@ sub _process {
     my $r=0;
     while($retry) {
         $retry--;
-        $r=system(@{$cmdline});
-        return 0 if($r==0);
+		if(!open FI,'-|',@{$cmdline}) {
+			return undef,"$!";
+		}
+		my @data = <FI>;
+		close FI;# or return undef,"$!";
+		$r = $?;
+#        $r=system(@{$cmdline});
+        return (0,@data) if($r==0);
         return 2 if($r==2); #/KILL,TERM,USERINT;
         $r = $r>>8;
         #2 =>
@@ -253,34 +259,42 @@ sub _download {
 		    }
 		}
 		
-		my $saveas_temp = "$saveas.downloading";
+		#my $saveas_temp = "$saveas.downloading";
 		my @cmdline = build_cmdline(
 			$downloader,
 			$url,
-			$saveas_temp,
+			undef,
+#			$saveas_temp,
 			$refer,
 			$cookie,
 			$options->{verbose},
 			$options->{maxtime}
 		);
-		my $r=_process("$name$url",\@cmdline,2);
-		
-		if($r==0 and -f $saveas_temp) {
-		    unlink ($saveas) if(-f $saveas);
-		    rename($saveas_temp,$saveas) or die("$!\n");
+		my ($r,@data)=_process("$name$url",\@cmdline,2);
+#		print STDERR "EXITVAL:$r\n";
+		if(!defined $r) {
+			app_error("\nExecuting \'" . join(" ",@cmdline) . "\'\nError: ",@data,"\n");
+			next;
+		}
+		elsif($r==0 and @data) {
+			open FO, ">",$saveas or die("Error writting $saveas: $!\n");
+			print FO @data;
+			close FO;
+#		    unlink ($saveas) if(-f $saveas);
+#		    rename($saveas_temp,$saveas) or die("$!\n");
 		    &log("$url->$saveas\n","$DOWNLOADLOG") if($options->{log});
 		    app_ok "$name$saveas\t[completed]\n";
 			$exitval = 0;
 			next;
 		}
 		elsif($r==2) {
-		    unlink $saveas_temp if(-f $saveas_temp);
+#		    unlink $saveas_temp if(-f $saveas_temp);
 		    app_warning "$name$url\t[killed]\n";
 			$exitval = 2;
 			return $exitval;
 		}
 		else {
-		    unlink $saveas_temp if(-f $saveas_temp);
+#		    unlink $saveas_temp if(-f $saveas_temp);
 		    app_error "$name$url\t[failed]\n";
 		    &log("$url->$saveas\n","$FAILLOG") if($options->{log});
 			$exitval = 1;
