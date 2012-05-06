@@ -220,7 +220,12 @@ sub _run_curl
     #if(-f $self->{options}{'cookie-jar'}) {
     #    system('sed','-i','-e','s/^#HttpOnly_//g',$self->{options}{'cookie-jar'});
     #}
-    return $exit_code,$data;
+	if(wantarray) {
+		return $exit_code,$data;
+	}
+	else {
+		return $exit_code;
+	}
 }
 
 sub get {

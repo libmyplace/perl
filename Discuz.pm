@@ -6,7 +6,7 @@ use HTML::TreeBuilder;
 #use HTTP::Cookies;
 use MyPlace::Curl;
 use URI;
-use Encode qw/decode/;
+use Encode qw/decode from_to encode/;
 use MyPlace::HTML::Convertor;
 my $CURL;
 my $COOKIE_FILENAME = $ENV{'HOME'} . "/.discuz_cookie.curl";
@@ -51,7 +51,7 @@ sub _do_login {
     {
         if($code == 0)
         {
-            if((!$action) and $content =~ /\<form\s+[^<>]*\s*action=['"]([^'"]+)['"]/i) {
+            if((!$action) and $content =~ /\<form\s+[^<>]*\s*action=['"]([^"]*log[^'"]+)['"]/i) {
                 $action = $1;
             }
             my @match = $content =~ /\<((?:input|select)\s+[^<>]+)/g;
@@ -106,6 +106,7 @@ sub http_get {
     $CURL = _make_curl_object() unless($CURL);
     $try = 6 unless[$try] ;
     my ($res,@data) = $CURL->get($url,"--silent","--referer",$url);
+	#die($res,@data);
     #my $req = HTTP::Request->new(GET => $url);
     #my $res = $CURL->request($req);
     if($res == 0) {
@@ -149,7 +150,7 @@ sub http_get {
                     goto &http_get;
                 }
                 else {
-                    return (undef,join("",@data));
+                    return (undef,@data);
                 }
         }
         elsif($state == 3 and $login) {
@@ -203,19 +204,23 @@ sub _parse_res_content {
     $state=0;
     my $content = join("",@_);
 #    foreach my $content (@_) {
-        if($content =~ /\<form\s+[^<>]*\s*action=['"]([^'"]+)['"]/i) {
+        if($content =~ /\<form\s+[^<>]*\s*action=['"]([^"]*log[^'"]+)['"]/i) {
             $login = $1;
         }
         if($content =~ /input\s+[^<>]*\s*name=['"]username['"]/i) {
             $state = 1;
         }
+		elsif($content =~ /ajaxget\(\'([^']*login[^']*)'/) {
+			$login = $1;
+			$state = 3;
+		}
         elsif($content =~ /location\.reload\(\)/i) {
             $state = 2;
         }
-        elsif($content =~ /href="([^"]+\.php\?action=login[^"]*)"/) {
-            $state = 3;
-            $login = $1;
-        }
+        #elsif($content =~ /href="([^"]+\.php\?action=login[^"]*)"/) {
+        #    $state = 3;
+        #    $login = $1;
+        #}
         my @match = $content =~ /\<((?:input|select)\s+[^<>]+)/g;
         foreach(@match) {
             my ($name,$value)= /^select/ ? ("",0) :  ("","");
@@ -235,6 +240,12 @@ sub _parse_res_content {
     return undef;
 }
 
+sub to_utf8 {
+	my $charset = shift;
+	my $data_ref = shift;
+	return map encode('utf8',decode($charset,$_)),@{$data_ref} if($data_ref);
+}
+
 sub _decode_data {
     my $data_ref = shift;
     return $data_ref unless(ref $data_ref);
@@ -247,10 +258,12 @@ sub _decode_data {
     }
     if($charset) {
         #print STDERR "Decode content using $charset\n";
-        return [map {decode($charset,$_)} @{$data_ref}];
+		my @data = to_utf8($charset,$data_ref);
+		return \@data if(@data);
     }
     return $data_ref;
 }
+
 
 sub init_with_url {
     my ($self,$url,$charset) = @_;
@@ -259,7 +272,7 @@ sub init_with_url {
     my ($ok,@data) = $self->http_get($url);
     if($ok) {
         if($self->{charset}) {
-            $self->init(map decode($self->{charset},$_),@data);
+            $self->init(to_utf8($self->{charset},\@data));
         }
         else {
             $self->init(@{_decode_data(\@data)});
@@ -298,22 +311,33 @@ sub init {
     my @forum_exp = (
         ["class",qr/^mainbox forumlist$/i],
         ["id",qr/^subforum$/i],
+		["id",qr/^subforum_\d+/],
     );
     my @forums;
+	my %U = ();
     foreach my $exp (@forum_exp) { 
         @forums= $tree->look_down(@{$exp});
         foreach(@forums) {
-            my @links = $_->look_down("_tag","a","href",qr/forum/);
+            my @links = $_->look_down("_tag","a","href",qr/(?:forumdisplay|forum-\d+-1\.html)/);
             foreach(@links) {
-                push @{$self->{forums}},[$_->attr("href"),$_->as_text];
+				my $text = $_->as_text;
+				my $href = $_->attr("href");
+				if($text and (!$U{$href})) {
+					push @{$self->{forums}},[$_->attr("href"),$text];
+					$U{$href} = 1;
+				}
             }
         }
     }
-    my @threads = $tree->look_down("_tag","a","href",qr/(:?viewthread\.php\?|thread-\d+-1)/i);
+    my @threads = $tree->look_down("_tag","a","href",qr/(?:mod=viewthread\&tid=|viewthread\.php\?|thread-\d+-1|read\.php\?tid-\d+\.html$)/i);
+	%U = ();
     foreach my $thread (@threads) {
         my $text = $thread->as_text;
         next if($text =~ /^[\s\d]*$/);
         my $href = $thread->attr("href");
+		next if($href =~ m/#/);
+		next if($U{$href});
+		$U{$href} = 1;
         push @{$self->{threads}},[$href,$text];
     }
     my $pages = $tree;
@@ -325,6 +349,7 @@ sub init {
         my @page_exp = (
             qr/^(.*forumdisplay\.php\?fid=\d+.*page=)(\d+)$/,
             qr/^(.*forum-\d+-)(\d+)(.+)$/,
+			qr/^(.*mod=forumdisplay&fid=\d+.*page=)(\d+)$/,
         );
         #http://174.37.129.201/forumdisplay.php?fid=570&page=75
         foreach my $exp (@page_exp) {
@@ -346,11 +371,13 @@ sub init {
                 last;
             }
         }
-        $self->{pages} = [map {$pre . $_ . $suf} ($min .. $max)] if($min<=$max and ($pre or $suf));
+        $self->{pages} = [map {$pre . $_ . $suf} ($min .. $max)] if($min<$max and ($pre or $suf));
     }
     my @postcontent;
-    foreach my $class ("postmessage defaultpost","postmessage firstpost","defaultpost","firstpost","postmessage","line") {
-        @postcontent = $tree->look_down("class",$class);
+    #foreach my $class ("postmessage defaultpost","postmessage firstpost","defaultpost","firstpost","postmessage","line") {
+    #foreach my $class ('^(?:postmessage defaultpost$|postmessage firstpost$|defaultpost$|firstpost$|postmessage)','^line$') {
+	foreach my $class (qw/defaultpost ^pcb$ ^tpc_content$ ^line$/) {
+        @postcontent = $tree->look_down("class",qr/$class/);
         last if(@postcontent);
     }
     @postcontent = $tree->look_down("id","thread_body_0") unless(@postcontent);

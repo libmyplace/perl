@@ -25,6 +25,18 @@ my $ESCAPE_MARK_ESCAPE="\0ESCAPE_MARK\0";
 my $SEPARATOR_ESCAPE="\0SEPARATOR\0";
 my $DIRTY=0;
 
+sub all {
+	my $self = shift;
+	my %r;
+	if($self->{data}) {
+		%r = (%{$self->{data}});
+	}
+	else {
+		%r = ();
+	}
+	return \%r;
+}
+
 sub list {
     my ($self,@target) = @_;
     my @r;
