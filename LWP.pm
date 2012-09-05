@@ -36,7 +36,7 @@ sub cookie_set {
     if(!$self->{cookie}) {
         $self->{cookie} = HTTP::Cookies->new(file => "$ENV{'HOME'}/.lwp_cookies.dat", autosave => 1);
 	}
-    $self->{ua}->cookie_jar($self->{cookie});
+    $self->{UserAgent}->cookie_jar($self->{cookie});
     $self->{cookie}->set_cookie(
         $ck{version} || undef,
         $ck{key},$ck{val},
