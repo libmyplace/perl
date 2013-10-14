@@ -31,6 +31,7 @@ my @OPTIONS = qw/
 		program|p:s
 		maxtime|m:i
 		force|f
+		connect-timeout:i
 	/;
 my $proxy = '127.0.0.1:9050';
 my $blocked_host = '\n';#wretch\.cc|facebook\.com|fbcdn\.net';
@@ -43,7 +44,7 @@ my @CURL = qw{
 		--fail --globoff --location
 		--user-agent Mozilla/5.0
 		--progress-bar --create-dirs
-		--connect-timeout 60
+		--connect-timeout 15
 };
 sub new {
 	my $class = shift;

@@ -66,12 +66,6 @@ sub with_color {
 	return @texts;
 }
 
-sub new {
-	my $class = shift;
-	my $self = bless {@_},$class;
-	return $self;
-}
-
 #sub app_error {
 #    print STDERR $prefix;
 #    color_print *STDERR,'red',@_;
@@ -95,7 +89,33 @@ sub app_abort {
     exit $?;
 }
 
+sub new {
+	my $class = shift;
+	my $appname = shift;
+	my $self = bless{appname=>$appname},$class;
+	return $self;
+}
+
+sub DESTROY {
+}
+
 sub AUTOLOAD {
+#	print STDERR "AUTOLOAD $AUTOLOAD ...\n";
+	my $self = shift;
+	if(ref $self eq 'MyPlace::Script::Message') {
+		if($AUTOLOAD =~ /::([\w\d_]+)$/) {
+			my $color = $CHANNEL{$1} || $1 || 'RESET';
+			my $prefix = $self->{appname} ? "$self->{appname}\> ":"";
+			print STDERR $prefix,color($color),@_,color('RESET');
+			return 1;
+		}
+		else {
+			return undef;
+		}
+	}
+	else {
+		unshift @_,$self;
+	}
     if($ENV{OS} and $ENV{OS} =~ /windows/i) {
         print STDERR @_;
     }
