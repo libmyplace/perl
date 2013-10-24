@@ -15,6 +15,7 @@ use MyPlace::Script::Message;
 use Getopt::Long qw/GetOptionsFromArray/;
 use Pod::Usage;
 use MyPlace::Filename qw/get_uniqname/;
+use URI;
 
 my @OPTIONS = qw/
 		help|h
@@ -208,7 +209,7 @@ sub _download {
 			$saveas = $2 if($2);
 		}
 		
-		$url =~ s/\ /%20/g;
+		my $eurl = URI->new($url);
 		my $refer=$options->{refurl} || $url;
 		if($options->{createdir} && !$saveas) {
 		    my $filename=$url;
@@ -263,7 +264,7 @@ sub _download {
 		#my $saveas_temp = "$saveas.downloading";
 		my @cmdline = build_cmdline(
 			$downloader,
-			$url,
+			$eurl,
 			undef,
 #			$saveas_temp,
 			$refer,
@@ -278,7 +279,7 @@ sub _download {
 			next;
 		}
 		elsif($r==0 and @data) {
-			open FO, ">",$saveas or die("Error writting $saveas: $!\n");
+			open FO, ">:raw",$saveas or die("Error writting $saveas: $!\n");
 			print FO @data;
 			close FO;
 #		    unlink ($saveas) if(-f $saveas);
