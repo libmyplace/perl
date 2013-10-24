@@ -15,11 +15,17 @@ sub save {
 	my $url = shift;
 	return undef if($self->{database}->{$url});
 	$self->{database}->{$url} = 1;
+	print {$self->{storage_handler}} "$url\n";
 	return 1;
+}
+
+sub close {
+	my $self = shift;
+	close $self->{storage_handler} if($self->{storage_handler});
 }
 sub write {
 	my $self = shift;
-	close $self->{storage_handler} if($self->{storage_handler});
+	return $self->close(@_);
 }
 sub load{
 	my $self = shift;
@@ -30,7 +36,7 @@ sub load{
 			chomp;
 			$self->{database}->{$_}=1;
 		}
-		close FI;
+		CORE::close FI;
 	}
 	open my $FO, ">>",$storage;
 	$self->{storage_handler}= $FO;

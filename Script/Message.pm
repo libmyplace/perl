@@ -116,7 +116,7 @@ sub AUTOLOAD {
 	else {
 		unshift @_,$self;
 	}
-    if($ENV{OS} and $ENV{OS} =~ /windows/i) {
+    if(0 and $ENV{OS} and $ENV{OS} =~ /windows/i) {
         print STDERR @_;
     }
     elsif($AUTOLOAD =~ /::(app|print)_([\w\d_]+)$/) {

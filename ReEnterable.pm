@@ -5,7 +5,8 @@ use strict;
 sub new {
     my $class = CORE::shift;
     my $pkg = CORE::shift || 'main';
-    return bless {stack=>[],package=>$pkg},$class;
+	my $file = shift;
+    return bless {stack=>[],package=>$pkg,file=>$file},$class;
 }
 
 sub push {
@@ -103,6 +104,8 @@ sub getState {
 sub loadFromFile {
     my $self = CORE::shift;
     my $file = CORE::shift;
+	$file = $self->{file} unless($file);
+	return undef unless($file);
     return undef unless(-f $file);
     local $Data::Dumper::Purity = 1;
     my ($Resume,$State);
@@ -118,6 +121,8 @@ sub loadFromFile {
 sub saveToFile {
     my $self = CORE::shift;
     my $file = CORE::shift;
+	$file = $self->{file} unless($file);
+	return undef unless($file);
     local $Data::Dumper::Purity = 1;
     my $Resume = $self->{stack};
     open FO,">",$file;
