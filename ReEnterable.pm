@@ -1,4 +1,5 @@
 package MyPlace::ReEnterable;
+use File::Spec;
 use Data::Dumper;
 use strict;
 
@@ -6,6 +7,7 @@ sub new {
     my $class = CORE::shift;
     my $pkg = CORE::shift || 'main';
 	my $file = shift;
+	$file = File::Spec->rel2abs($file);
     return bless {stack=>[],package=>$pkg,file=>$file},$class;
 }
 
@@ -123,6 +125,7 @@ sub saveToFile {
     my $file = CORE::shift;
 	$file = $self->{file} unless($file);
 	return undef unless($file);
+	print STDERR "Writting $file ...\n";
     local $Data::Dumper::Purity = 1;
     my $Resume = $self->{stack};
     open FO,">",$file;
