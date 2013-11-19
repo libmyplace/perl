@@ -17,14 +17,13 @@ BEGIN {
 }
 my @CURL = qw{
             curl
-            --fail
             --globoff
-            --location
-            --user-agent Mozilla/5.0
             --progress-bar
             --create-dirs
             --connect-timeout 15
 };
+#--location
+push @CURL,"--user-agent","Mozilla/5.0 (Windows NT 6.1; rv:24.0) Gecko/20100101 Firefox/24.0";
 my $PROXY = '127.0.0.1:9050';
 my $BLOCKED_HOST = 'wretch\.cc|facebook\.com|fbcdn\.net';
 my $BLOCKED_EXP = qr/^[^\/]+:\/\/[^\/]*(?:$BLOCKED_HOST)(?:\/?|\/.*)$/;
@@ -198,7 +197,7 @@ sub _run_curl
             push @args,$_;
         }
     }
-   # print STDERR join(" ",@CURL,@args),"\n";
+	#print STDERR join(" ",@CURL,@args),"\n";
     open FI,"-|",@CURL,@args;
     my $data = join("",<FI>);
     close FI;

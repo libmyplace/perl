@@ -18,6 +18,7 @@ use URI::Escape;
 use MyPlace::Script::Message;
 use Getopt::Long;
 use MyPlace::Usage;
+use MyPlace::Program::Download;
 my @OPTIONS = qw/
                 help|h|? version|ver edit-me manual|man
                 autoname|a cookie|b=s createdir|d ext|e=s 
@@ -133,6 +134,17 @@ sub new {
 	return $self;
 }
 
+sub cathash {
+	my $lef = shift;
+	my $rig = shift;
+	return $lef unless($rig);
+	return $lef unless(%$rig);
+	my %res = $lef ? %$lef : ();
+	foreach(keys %$rig) {
+		$res{$_} = $rig->{$_} if(defined $rig->{$_});
+	}
+	return \%res;
+}
 sub set {
 	my $self = shift;
 	my %OPTS;
@@ -142,7 +154,7 @@ sub set {
 	    Getopt::Long::GetOptionsFromArray(\@_,\%OPTS,@OPTIONS);
 		MyPlace::Usage::Process(\%OPTS,$VERSION);
 	}
-	$self->{options} = \%OPTS;
+	$self->{options} = cathash($self->{options},\%OPTS);
 	push @{$self->{tasks}},@_ if(@_);
 	return $self;
 }
@@ -210,17 +222,19 @@ sub reset {
 
 sub execute {
 	my $self = shift;
-	my %OPTS;
+	my $OPTS = {};
 	if(@_)
 	{
 		Getopt::Long::Configure('no_ignore_case');
-	    Getopt::Long::GetOptionsFromArray(@_,\%OPTS,@OPTIONS);
-		MyPlace::Usage::Process(\%OPTS,$VERSION);
+	    Getopt::Long::GetOptionsFromArray(@_,$OPTS,@OPTIONS);
+		MyPlace::Usage::Process($OPTS,$VERSION);
+		$OPTS = cathash($self->{options},$OPTS);
+		$self->add($_) foreach(@_);
 	}
-	#use Data::Dumper;print STDERR Data::Dumper->Dump([\%OPTS],['*OPTS']);
-	%OPTS = (%{$self->{options}},%OPTS);
-	#use Data::Dumper;print STDERR Data::Dumper->Dump([\%OPTS],['*OPTS']);
-	$self->add($_) foreach(@_);
+	else {
+		$OPTS = $self->{options};
+	}
+	my %OPTS = %$OPTS;
 	my $def_mul=3;
 	my $createdir = $OPTS{"createdir"} ? $OPTS{"createdir"} : 0;
 	my $muldown   = $OPTS{"maxtask"} ? $OPTS{"maxtask"} : $def_mul;
@@ -254,16 +268,15 @@ sub execute {
 		app_error("Nothing to do\n");
 		return 0;
 	}
-	app_message("Initializing...\n");
+	#app_message("Initializing...\n");
 	para_init $muldown;
-	use MyPlace::Program::Download;
 	my $dl = new MyPlace::Program::Download (
 		-maxtime=>$OPTS{maxtime} || '0',
-		-cookie=>$OPTS{cookie} || '',
 		"-d",
 	);
+	$dl->set("--cookie",$OPTS{cookie}) if($OPTS{cookie});
 	my %QUEUE;
-	app_message("Have $count tasks total\n");
+#	app_message("Have $count tasks total\n");
 	while (@{$self->{tasks}}) {
 		if($self->{IAMKILLED}) {
 			last;

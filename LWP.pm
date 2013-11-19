@@ -18,7 +18,7 @@ BEGIN {
 }
 
 use LWP::UserAgent;
-use HTTP::Cookies;
+use HTTP::Cookies::Microsoft;
 
 my $PROXY = '127.0.0.1:9050';
 my $BLOCKED_HOST = 'wretch\.cc|facebook\.com|fbcdn\.net';
@@ -27,16 +27,16 @@ sub new {
     my $class=shift;
     my  $ua = LWP::UserAgent->new;
     $ua->agent("Mozilla/5.0 (X11; U; Linux i686; en-US; rv:1.9.0.3) Gecko/2008092416 Firefox/3.0.3 Firefox/3.0.1");
-    return bless {"UserAgent"=>$ua,"progress"=>1,@_},$class;
+    my $self = bless {"UserAgent"=>$ua,"progress"=>1,@_},$class;
+	$self->{cookie} = HTTP::Cookies::Netscape->new(file => "$ENV{'HOME'}/.lwp_cookies.dat", delayload=>1,autosave => 1);
+    $self->{UserAgent}->cookie_jar($self->{cookie});
+	return $self;
 }
 
 sub cookie_set {
     my $self = shift;
     my %ck = @_;
-    if(!$self->{cookie}) {
-        $self->{cookie} = HTTP::Cookies->new(file => "$ENV{'HOME'}/.lwp_cookies.dat", autosave => 1);
-	}
-    $self->{UserAgent}->cookie_jar($self->{cookie});
+    #$self->{UserAgent}->cookie_jar($self->{cookie});
     $self->{cookie}->set_cookie(
         $ck{version} || undef,
         $ck{key},$ck{val},
@@ -91,7 +91,11 @@ sub chunk_income {
 		else {
 			state $nKB = 0;
 			state $count = 0;
-			print STDERR " " if($first_chunk);
+			if($first_chunk) {
+				$nKB = 0;
+				$count = 0;
+				print STDERR " ";
+			}
 			if(($nKB + $length) < 1024*10) {
 				$nKB += $length;
 			}
@@ -127,7 +131,10 @@ sub get {
     if ($res->is_success) {
         if($charset) {
             require Encode;
-            Encode::from_to($data,$charset,'utf8');
+			my $dec = Encode::find_encoding($charset);
+			if($dec && ref $dec) {
+				$data = $dec->decode($data);
+			}
         }
 		if(wantarray) {
 	        return 1,$data,$res;#res,$data;

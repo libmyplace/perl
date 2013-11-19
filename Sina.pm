@@ -16,8 +16,7 @@ our $login_url2 = 'http://t.sina.com.cn/ajaxlogin.php?framelogin=1&callback=pare
 
 use MyPlace::Curl;
 my $curl = MyPlace::Curl->new();
-my $cookie = $ENV{HOME} . "/.curl_cookie.dat";
-
+my $cookie = $ENV{HOME} . "/.curl_cookies.dat";
 $curl->set('cookie',$cookie);
 $curl->set('cookie-jar',$cookie);
 

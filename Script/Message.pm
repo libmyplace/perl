@@ -1,13 +1,13 @@
 #!/usr/bin/perl
 package MyPlace::Script::Message;
-use Term::ANSIColor;
 BEGIN {
     use Exporter ();
+	use Term::ANSIColor qw/color colored/;
     our ($VERSION,@ISA,@EXPORT,@EXPORT_OK,%EXPORT_TAGS);
     $VERSION        = 1.00;
     @ISA            = qw(Exporter);
-    @EXPORT         = qw(&app_ok &app_message &app_message2 &app_error &app_warning &app_abort &color_print &colored &color &app_prompt &with_color);
-    @EXPORT_OK      = map "print_$_",(qw/red blue yellow white black cyan green/);
+    @EXPORT         = qw(&app_ok &app_message &app_message2 &app_error &app_warning &app_abort &color_print &colored &color &app_prompt &with_color &set_color &color_channel);
+    @EXPORT_OK      = (map "print_$_",(qw/red blue yellow white black cyan green/),'&set_color','&color_channel');
 }
 
 
@@ -22,15 +22,30 @@ my %CHANNEL = (
     "warning"=>"yellow",
     "warn"=>"yellow",
     "error"=>"red",
-    "abort"=>"red"
+    "abort"=>"red",
+	"reset"=>"RESET",
+	"RESET"=>"RESET",
 );
 no warnings;
-sub color {
-	goto &Term::ANSIColor::color;
+
+sub color_channel($) {
+	return $CHANNEL{$_[0]} if(@_);
 }
-sub colored {
-	goto &Term::ANSIColor::colored;
+
+sub set_color {
+	my $out = shift;
+	my $ref = ref $out ? $out : \$out;
+	if(!((ref $ref) eq "GLOB")) {
+		$ref =*STDOUT;
+		unshift @_,$out;
+	}
+	my $color = shift;
+	if($CHANNEL{$color}) {
+		$color = $CHANNEL{$color};
+	}
+	print $ref color($color);
 }
+
 use warnings;
 sub color_print($$@) {
     my $out=shift;
@@ -44,7 +59,7 @@ sub color_print($$@) {
         print STDERR @_;
     }
     else {
-        print $ref color($color),@_,color('reset') if(@_);
+        print $ref color($color),@_,color('RESET') if(@_);
     }
 }
 sub app_prompt {

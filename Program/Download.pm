@@ -46,6 +46,7 @@ my @CURL = qw{
 		--user-agent Mozilla/5.0
 		--progress-bar --create-dirs
 		--connect-timeout 15
+		--location
 };
 sub new {
 	my $class = shift;
@@ -54,6 +55,18 @@ sub new {
 		$self->set(@_);
 	}
 	return $self;
+}
+
+sub cathash {
+	my $lef = shift;
+	my $rig = shift;
+	return $lef unless($rig);
+	return $lef unless(%$rig);
+	my %res = $lef ? %$lef : ();
+	foreach(keys %$rig) {
+		$res{$_} = $rig->{$_} if(defined $rig->{$_});
+	}
+	return \%res;
 }
 
 sub set {
@@ -65,31 +78,31 @@ sub set {
 	else {
 		$OPT{'help'} = 1;
 	}
-	$self->{options} = \%OPT;
+	$self->{options} = cathash($self->{options},\%OPT);
 	push @{$self->{urls}},@_ if(@_);
 }
 
 sub execute {
 	my $self = shift;
-	my %OPT;
+	my $OPT;
 	if(@_) {
-		GetOptionsFromArray(\@_,\%OPT,@OPTIONS);
+		$OPT= {};
+		GetOptionsFromArray(\@_,$OPT,@OPTIONS);
+		$OPT = cathash($self->{options},$OPT);
+		push @{$self->{urls}},@_ if(@_);
 	}
-	#use Data::Dumper;print Data::Dumper->Dump([\@_,\%OPT],[qw/*_ *OPT/]);
-	if($self->{options}) {
-		%OPT = (%{$self->{options}},%OPT);
+	else {
+		$OPT = $self->{options};
 	}
-#	$self->{options} = \%OPT;
-	if($OPT{help}) {
+	if($OPT->{help}) {
 		pod2usage('-exitval'=>1,'-verbose'=>1);
 		return 1;
 	}
-	elsif($OPT{manual}) {
+	elsif($OPT->{manual}) {
 		pod2usage('--exitval'=>1,'-verbose'=>2);
 		return 2;
 	}
-	push @{$self->{urls}},@_ if(@_);
-	my $exitval = $self->_download(\%OPT);
+	my $exitval = $self->_download($OPT);
 	return $exitval;
 }
 
