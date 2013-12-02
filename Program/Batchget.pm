@@ -268,8 +268,9 @@ sub execute {
 		app_error("Nothing to do\n");
 		return 0;
 	}
+
 	#app_message("Initializing...\n");
-	para_init $muldown;
+	para_init $muldown if($count > 1);
 	my $dl = new MyPlace::Program::Download (
 		-maxtime=>$OPTS{maxtime} || '0',
 		"-d",
@@ -283,7 +284,7 @@ sub execute {
 		}
 		my $_ = shift @{$self->{tasks}};
 		$index++;
-		my $msghd = "${prefix}\[$index/$count]";
+		my $msghd = $count > 1 ? "${prefix}\[$index/$count]" : "";
 		next unless($_);
 		my $url;
 		my $filename ;
@@ -321,13 +322,20 @@ sub execute {
 	            next;
 			}
 			if($logger) {system($logger,$filename,$url);}
-			para_queue (\&download,$self,$dl,
+
+			my @args = (
 				'-saveas'=>$filename,
 				'-n'=>$msghd,
 				'-r'=>$OPTS{'referer'} || $url,
 				'-url'=>$url,
 				$OPTS{'dl-force'} ? '-f' : (),
 			);
+			if($count > 1) {
+				para_queue(\&download,$self,$dl,@args);
+			}
+			else {
+				$self->download($dl,@args);
+			}
 #			my $exitval = $dl->execute(
 #				'-saveas'=>$filename,
 #				'-n'=>$msghd,
@@ -340,7 +348,7 @@ sub execute {
 #			}
 	    }
 	}
-	para_cleanup();
+	para_cleanup() if($count > 1);
 	chdir $PWD;
 	$self->save_database() if($urlhist);
 	if($self->{IAMKILLED}) {

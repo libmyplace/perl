@@ -5,50 +5,12 @@ use warnings;
 
 use MyPlace::Script::Message;
 use MyPlace::Program::Batchget;
+use MyPlace::Program::Download;
+use MyPlace::Data::BlockedSites;
 use Getopt::Long;
 
-my @BLOCKED = (
-	'rapidimg\.org',
-	'7seasex\.com',
-	'sadpanda\.us',
-	'imagehost\.it',
-	'freespace\.com\.au',
-	'imgjoe\.com',
-	'leetleech\.org',
-	'imgkeep\.com',
-	'uyl\.me',
-	'789zy\.us',
-	'item\.slide\.com',
-	'umei\.cc',
-	'flare\.me',
-	'fototube\.pl',
-	'shareimage\.org',
-	'imagevenue\.com',
-	'imgchili\.com',
-	'imagekiss\.com',
-	'tinypic\.com',
-	'ojiji\.net',
-	'mmsky\.net',
-	'snapfish\.com',
-	'15335\.com',
-	'gg88\.com',
-	'slide\.com',
-	'donsnaughtymodels\.com',
-	'dosug\.cz',
-	'imagehyper\.com',
-	'totallynsfw\.com',
-	'img\.vkdt\.info',
-	'mmyishu\.com:99',
-	'schoolgirl-bdsm\.jp',
-	'imgly\.net',
-	'imgplanet\.com',
-	'mudadia\.p8\.hu',
-	'se552\.com',
-	'1000yah\.com',
-	'pixshock\.net',
-	'share\.photo\.xuite\.net',
-	'img\.myav\.tv',
-);
+my @BLOCKED = @MyPlace::Data::BlockedSites::ALL;
+
 
 my %EXPS = (
 	"bdhd"=>'^(bdhd:\/\/.*\|)([^\|]+?)(\|?)$',
@@ -57,7 +19,7 @@ my %EXPS = (
 	'qvod'=>'^(qvod:\/\/.*\|)([^\|]+?)(\|?)$',
 );
 my $MSG = MyPlace::Script::Message->new('saveurl');
-my $BATCHGET;
+my @DOWNLOADS;
 
 sub parse_options {
 	my @OPTIONS = qw/
@@ -197,7 +159,6 @@ sub normalize {
 }
 sub process_http {
 	my $self = shift;
-	my %OPTS = %{$self->{OPTS}};
 	my ($link,$filename) = @_;
 	if(blocked($link)) {
 		$MSG->warning("Blocked: $link\n");
@@ -213,14 +174,7 @@ sub process_http {
 		$MSG->warning("Ignored: File exists, $filename\n");
 		return;
 	}
-	if(!$BATCHGET) {
-		$BATCHGET = new MyPlace::Program::Batchget("--maxtime",240,"--taskname","Batchget");
-		$BATCHGET->set("--referer",$OPTS{referer}) if($OPTS{referer});
-		$BATCHGET->set("--no-clobber") unless($OPTS{overwrite});
-		$BATCHGET->set("--url-history") if($OPTS{history});
-	}
-	$BATCHGET->add("$link\t$filename");
-#	$MSG->message("Queuing: $link\n");
+	push @DOWNLOADS,[$link,$filename];
 }
 sub process_file {
 	my $self = shift;
@@ -339,6 +293,7 @@ sub process_data {
 
 sub doTasks {
 	my $self = shift;
+	my %OPTS = %{$self->{OPTS}};
 	my $tasks = $self->{Tasks};
 	if(!($tasks && @{$tasks})) {
 		$MSG->warn("No tasks to save\n");
@@ -403,14 +358,20 @@ sub doTasks {
 		}
 		$idx++;
 	}
-	if($BATCHGET) {
-		my $tasks = $BATCHGET->{tasks};
-		if($tasks && @{$tasks}) {
-			my $count = @{$tasks};
-			my $msg =sprintf("%d %s start to download ...\n",$count,$count > 1 ? "Tasks":"Task");
-			$MSG->message($msg);
-			$BATCHGET->execute();
+	my $D = scalar(@DOWNLOADS);
+	return 1 unless($D);
+	
+	if($D) {
+		my $BATCHGET = new MyPlace::Program::Batchget("--maxtime",240);
+		$BATCHGET->set("--referer",$OPTS{referer}) if($OPTS{referer});
+		$BATCHGET->set("--no-clobber") unless($OPTS{overwrite});
+		$BATCHGET->set("--urlhist") if($OPTS{history});
+		foreach(@DOWNLOADS) {
+			$BATCHGET->add("$_->[0]\t$_->[1]");
 		}
+		@DOWNLOADS = ();
+		$MSG->message("$D tasks start to download ...\n");
+		$BATCHGET->execute();
 	}
 	return $count;
 }

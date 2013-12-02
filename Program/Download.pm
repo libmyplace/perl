@@ -179,6 +179,19 @@ sub _process {
     return 1;
 }
 
+sub fixlength_msg {
+		my $a = shift;
+		my $max = shift;
+		my $l = length($a);
+		if($l > $max) {
+			my $left = int(($max)/2*3);
+			my $right = $l - int($max/3)-6;
+			return substr($a,0,$left) . " ... " . substr($a,$right);
+		}
+		else {
+			return $a;
+		}
+}
 
 #my $OptFlag='m:lvu:s:dn:r:b:ap:f';
 #my %OPT;
@@ -246,16 +259,18 @@ sub _download {
 		my $name= $options->{"name"} || "";
 		$idx++;
 		$name = "${name}[$idx/$count]" if($count>1);
+		my $message;
 		if($options->{verbose}) {
-		    app_message(sprintf("%s\n%-8s: %s\n%-8s: %s\n%-8s: %s\n",
+		    $message = sprintf("%s\n%-8s: %s\n%-8s: %s\n%-8s: %s\n",
 		            $name ? "\n$name" : "",
 		            "URL",$url,
 		            "SaveAs",$saveas,
-		            "Refer",$refer));
+		            "Refer",$refer);
 		}
 		else {
-		    app_message "$name$url\t[starting]\n";
+		    $message = "$name$url\t[starting]\n";
 		}
+		app_message fixlength_msg($message,60);
 		
 		if ((!$options->{force}) and -f "$saveas" ) {
 		    app_warning "$saveas exists\t[canceled]\n";
