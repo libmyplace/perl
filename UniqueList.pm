@@ -1,6 +1,5 @@
 #!/usr/bin/perl -w
 package MyPlace::UniqueList;
-use MyPlace::Script::Message;
 use strict;
 use warnings;
 
@@ -30,7 +29,7 @@ sub load {
 	$self->{hash} = {};
 	$self->{dirty} = 0;
 	if(-f $file) {
-		open FI,'<',$file or die("reading $file: $!\n");
+		open FI,'<:utf8',$file or die("reading $file: $!\n");
 		foreach(<FI>) {
 			chomp;
 			$self->{hash}->{$_} = 1;
@@ -41,7 +40,7 @@ sub load {
 	if($self->{message}) {
 		my $count = @{$self->{list}};
 		my $name = $count ? $self->{itemsName} : $self->{itemName};
-		app_message(with_color("^(CYAN)Read ^(YELLOW)$count^(CYAN) $name from [$file]\n"));
+		#app_message(with_color("^(CYAN)Read ^(YELLOW)$count^(CYAN) $name from [$file]\n"));
 	}
 	return $self;
 }
@@ -55,10 +54,10 @@ sub save {
 	if(!$self->{dirty}) {
 		my $count = @{$self->{list}};
 		my $name = $count ? $self->{itemsName} : $self->{itemName};
-		app_message(with_color("^(YELLOW)$count^(CYAN) $name in [$file]\n"));
+		#app_message(with_color("^(YELLOW)$count^(CYAN) $name in [$file]\n"));
 		return undef;
 	}
-	open FO,'>',$file or die("writting $file: $!\n");
+	open FO,'>:utf8',$file or die("writting $file: $!\n");
 	if($self->{list}) {
 		print FO map "$_\n",@{$self->{list}};
 	}
@@ -67,7 +66,7 @@ sub save {
 	if($self->{message}) {
 		my $count = @{$self->{list}};
 		my $name = $count ? $self->{itemsName} : $self->{itemName};
-		app_message(with_color("^(CYAN)Write ^(YELLOW)$count^(CYAN) $name to [$file]\n"));
+		#app_message(with_color("^(CYAN)Write ^(YELLOW)$count^(CYAN) $name to [$file]\n"));
 	}
 	return $self;
 }

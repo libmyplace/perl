@@ -191,7 +191,7 @@ sub _run_curl
         next unless($_);
         if(m/^charset:([^\s]+)/) {
             require Encode;
-            $decoder = $1;
+            $decoder = Encode::find_encoding($1);
         }
         else {
             push @args,$_;
@@ -201,8 +201,8 @@ sub _run_curl
     open FI,"-|",@CURL,@args;
     my $data = join("",<FI>);
     close FI;
-    if($decoder) {
-        Encode::from_to($data,$decoder,'utf8');
+    if($decoder && ref $decoder) {
+		$data = $decoder->decode($data);
     }
     my $exit_code = $?;
     if($exit_code == 0) 

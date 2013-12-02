@@ -433,7 +433,7 @@ sub read_plainfile {
         return $self->{data};
     }
     my @text;
-    if(!open(FH, $file)) {
+    if(!open(FH,"<",$file)) {
         print STDERR "$!\n";
         $self->{data}= {};
         return $self->{data};
