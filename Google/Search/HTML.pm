@@ -7,8 +7,7 @@ use constant {
     APPID=>'BlVF2czV34FVChK2mzsN7SBghcl.NwZ4YayhlbBXiYxPnRScC49U1ja4HnnF',
     IMAGE_SEARCH_REFER=>'http://images.google.com',
     URL_ID=>'url',
-    IMAGE_DEFAULT_COUNT=>18,
-    IMAGE_MAX_COUNT=>18,
+    IMAGE_DEFAULT_COUNT=>21,
     IMAGE_DATA_ID=>'results',
 };
 my @GOOGLE_IP = (
@@ -32,13 +31,16 @@ my @GOOGLE_IP = (
 );
 #@GOOGLE_IP = ('images.google.com');
 @GOOGLE_IP = (
-#	'www.google.com.hk',
-	'www.google.com',
+	'www.google.com.hk',
+#	'www.google.com',
 #	'www.google.co.jp',
 #	'www.google.co.kr',
 );
 #http://images.google.com/images?hl=en&newwindow=1&safe=off&as_st=y&tbs=isch%3A1%2Cisz%3Alt%2Cislt%3Axga&sa=1&q=%22Michelle+Marsh%22+nude&aq=f&aqi=&aql=&oq=&gs_rfai=
 #http://www.google.com/images?q=Jordan+Carver&um=1&hl=en&newwindow=1&safe=off&tbs=isch:1,isz:lt,islt:2mp
+
+#https://www.google.com.hk/search?q=%EC%9D%B4%ED%9A%A8%EC%98%81&newwindow=1&safe=off&sa=X&hl=zh-HK&tbm=isch&ijn=1&ei=gNUqVILoBKLOygOJq4KoAw&start=100
+
 my %DEFAULT_PARAMS = 
 (
     www => {},
@@ -46,7 +48,9 @@ my %DEFAULT_PARAMS =
     {
         'safe'=>'off',
         'hl'=>'en',
-		'sout'=>'0',
+		'tbm'=>'isch',
+		'sa'=>'X',
+#		'sout'=>'0',
     },
 );
 
@@ -98,6 +102,7 @@ sub test_google_ip  {
 sub get_api_url {
     my ($vertical,$keyword,$page,%params) = @_;
     my %api_params;
+	my $action = "search";
     foreach (keys  %params) {
         next if($_ eq 'type');
         next if($_ eq 'dimensions');
@@ -116,6 +121,7 @@ sub get_api_url {
         }
     }
     if($vertical eq 'images') {
+		%api_params = (%{$DEFAULT_PARAMS{images}},%api_params);
         if($params{dimensions}) {
             $api_params{tbs}='isch:1,isz:lt,islt:' . $params{dimensions};
         }
@@ -136,13 +142,14 @@ sub get_api_url {
     if(!$api_params{start}) {
         if($page and $page =~ m/^[0-9]+$/ and $page>1) {
             $api_params{start} = $api_params{ndsp} * ($page - 1);
+			$api_params{ijn} = $page;
         }
     }
     $api_params{hl} = 'en' unless($api_params{hl});
     $api_params{safe} = 'off' unless($api_params{safe});
-	$api_params{sout} = '1';
+#	$api_params{sout} = '1';
 #    my $params = join("&",map ("$_=" . $api_params{$_},keys %api_params));
-    return build_url('http://' . &get_google_ip()  . "/$vertical?",\%api_params);
+    return build_url('http://' . &get_google_ip()  . "/$action?",\%api_params);
 }
 
 sub new {
@@ -199,7 +206,7 @@ sub search {
 	}
     if($res and $res->is_success) {
         my $code = $res->content;
-		
+		#print STDERR $code;	
         if($code and $code =~ m/\;\s*dyn\.setResults\((.+?)\)\s*\;\s*/s) {
             $code = $1;
 			$data = eval($code);

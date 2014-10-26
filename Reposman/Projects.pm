@@ -200,11 +200,13 @@ sub translate_url {
 		else {
 			$url =~ s/#1/$path/g;
 		}
+		$url =~ s/#shortname#/$leaf/g;
 	}
 	else {
 		$url =~ s/#1/$root/g;
 		$url =~ s/#2!/$root/g;
 		$url =~ s/[\/\.\-]?#2//g;
+		$url =~ s/#shortname#/$path/g;
 	}
     #$url =~ s/\/+$//;
 	#$url =~ s/\.{2,}([^\/]+)/\.$1/g;

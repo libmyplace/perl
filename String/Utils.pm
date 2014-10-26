@@ -8,7 +8,7 @@ BEGIN {
     $VERSION        = 1.00;
     @ISA            = qw(Exporter);
     @EXPORT         = qw();
-    @EXPORT_OK      = qw(dequote);
+    @EXPORT_OK      = qw(dequote no_empty);
 }
 use utf8;
 my $DEBUG=0;
@@ -56,6 +56,19 @@ sub dequote {
 		}
 	}
 	return $_;
+}
+
+sub no_empty {
+	my $text = shift;
+	my $prefix = shift || "";
+	my $suffix = shift || "";
+	my $default = shift || "";
+	if(!$text) {
+		return $default;
+	}
+	else {
+		return "$prefix$text$suffix";
+	}
 }
 
 1;

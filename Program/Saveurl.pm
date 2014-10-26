@@ -90,7 +90,8 @@ sub addTaskFromFile {
 	if($GLOB) {
 		$fh = $file;
 	}
-	elsif(!open $fh,"<:utf8",$file) {
+	elsif(!open $fh,"<",$file) {
+	#elsif(!open $fh,"<:utf8",$file) {
 		app_error("(line " . __LINE__ . ") Error opening $file:$!\n");
 		return undef;
 	}
@@ -170,10 +171,10 @@ sub process_http {
 		}
 	}
 	$filename = normalize($filename) if($filename);
-	if(-f $filename) {
-		$MSG->warning("Ignored: File exists, $filename\n");
-		return;
-	}
+	#if(-f $filename) {
+	#	$MSG->warning("Ignored: File exists, $filename\n");
+	#	return;
+	#}
 	push @DOWNLOADS,[$link,$filename];
 }
 sub process_file {
@@ -221,6 +222,7 @@ sub process_bdhd {
 		$filename = $filename . ".bsed";
 		$MSG->green("Saving file: $filename\n");
 		open FO,'>:utf8',$filename;
+		#open FO,'>:utf8',$filename;
 		print FO 
 <<"EOF";
 {
@@ -287,6 +289,7 @@ sub process_data {
 	$data =~ s/\0/\n/g;
 	print STDERR "Saving file: $filename\n";
 	open FO,">:utf8",$filename or die("$!\n");
+	#open FO,">:utf8",$filename or die("$!\n");
 		print FO $data;
 	close FO;
 }
@@ -319,7 +322,7 @@ sub doTasks {
 			$MSG->warn("Skip URL TYPE [$proto]: $_\n");
 			next;
 		}
-
+		s/[\r\n]+/ /g;
 		if(m/^qvod:(.+)\t(.+)$/) {
 			$self->process_qvod($1,$2);
 		}
@@ -338,10 +341,10 @@ sub doTasks {
 		elsif(m/^(ed2k:\/\/.+)$/) {
 			$self->process_bhdh($1);
 		}
-		elsif(m/^(http:\/\/.+)\t(.+)$/) {
+		elsif(m/^(https?:\/\/.+)\t(.+)$/) {
 			$self->process_http($1,$2);
 		}
-		elsif(m/^(http:\/\/.+)$/) {
+		elsif(m/^(https?:\/\/.+)$/) {
 			$self->process_http($1);
 		}
 		elsif(m/^file:\/\/(.+)\t(.+)$/) {
@@ -362,7 +365,7 @@ sub doTasks {
 	return 1 unless($D);
 	
 	if($D) {
-		my $BATCHGET = new MyPlace::Program::Batchget("--maxtime",240);
+		my $BATCHGET = new MyPlace::Program::Batchget("--maxtime",3600);
 		$BATCHGET->set("--referer",$OPTS{referer}) if($OPTS{referer});
 		$BATCHGET->set("--no-clobber") unless($OPTS{overwrite});
 		$BATCHGET->set("--urlhist") if($OPTS{history});
@@ -370,7 +373,7 @@ sub doTasks {
 			$BATCHGET->add("$_->[0]\t$_->[1]");
 		}
 		@DOWNLOADS = ();
-		$MSG->message("$D tasks start to download ...\n");
+		#$MSG->message("$D tasks start to download ...\n");
 		$BATCHGET->execute();
 	}
 	return $count;

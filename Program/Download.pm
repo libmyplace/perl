@@ -57,6 +57,15 @@ sub new {
 	return $self;
 }
 
+sub set_reportor {
+	my $self = shift;
+	if(@_) {
+		$self->{reportor} = shift;
+		$self->{reportor_data} = shift;
+	}
+	return $self;
+}
+
 sub cathash {
 	my $lef = shift;
 	my $rig = shift;
@@ -150,33 +159,34 @@ sub _process {
     my $r=0;
     while($retry) {
         $retry--;
-		if(!open FI,'-|',@{$cmdline}) {
-			return undef,"$!";
+		my @data;
+		if(open FI,'-|',@{$cmdline}) {
+		#	return undef,"$!";
+			@data = <FI>;
+			close FI;
 		}
-		my @data = <FI>;
-		close FI;# or return undef,"$!";
 		$r = $?;
 #        $r=system(@{$cmdline});
         return (0,@data) if($r==0);
-        return 2 if($r==2); #/KILL,TERM,USERINT;
+        return 2,$! if($r==2); #/KILL,TERM,USERINT;
         $r = $r>>8;
         #2 =>
         #22 => Request Error 404,403,400
         #56 => Recv failure: Connection reset by peer
 		#47 => Reach max redirects.
 		#52 => curl: (52) Empty reply from server
-        return $r if(
+        return $r,$! if(
 			$r == 2 
-			or $r == 22 
+		   #or $r == 22 
 			or $r == 56 
 			or $r == 6 
-			or $r=47
-			or $r = 52
+			or $r == 47
+			or $r == 52
 			);
-        app_warning "\rdownload:error($r), wait 1 second,retry $taskname\n";
+        app_warning "\rdownload:error($r), wait 1 second,retry($retry):\n$taskname\n";
         sleep 1;
     }
-    return 1;
+    return 1,'Failed retrying downloads';
 }
 
 sub fixlength_msg {
@@ -268,19 +278,19 @@ sub _download {
 		            "Refer",$refer);
 		}
 		else {
-		    $message = "$name$url\t[starting]\n";
+		    $message = "\n$name$url\n";
 		}
-		app_message fixlength_msg($message,60);
+		print STDERR $message;#fixlength_msg($message,60);
 		
 		if ((!$options->{force}) and -f "$saveas" ) {
-		    app_warning "$saveas exists\t[canceled]\n";
+		    app_warning "$saveas exists\t[Canceled]\n";
 			$exitval = 13;
 			next;
 		}
 		
 		if($cookie) {
 		    if(!-f $cookie) {
-		        app_message "creating cookie for $url...\n";
+		        app_message "Creating cookie for $url...\n";
 		        my @match = $url =~ /^(http:\/\/[^\/]+)\//;
 		        if(@match) {
 		            my $domain=$match[0];
@@ -300,7 +310,10 @@ sub _download {
 			$options->{verbose},
 			$options->{maxtime}
 		);
-		my ($r,@data)=_process("$name$url",\@cmdline,2);
+		my ($r,@data)=_process("$name$url",\@cmdline,($url =~ m/weipai\.cn/ ? 10 : 2));
+		if(defined $self->{reportor}) {
+			$self->{reportor}->($self->{reportor_data},$url,$r);
+		}
 #		print STDERR "EXITVAL:$r\n";
 		if(!defined $r) {
 			app_error("\nExecuting \'" . join(" ",@cmdline) . "\'\nError: ",@data,"\n");
@@ -313,19 +326,19 @@ sub _download {
 #		    unlink ($saveas) if(-f $saveas);
 #		    rename($saveas_temp,$saveas) or die("$!\n");
 		    &log("$url->$saveas\n","$DOWNLOADLOG") if($options->{log});
-		    app_ok "$name$saveas\t[completed]\n";
+		    app_ok "$name$saveas\t[Completed]\n";
 			$exitval = 0;
 			next;
 		}
 		elsif($r==2) {
 #		    unlink $saveas_temp if(-f $saveas_temp);
-		    app_warning "$name$url\t[killed]\n";
+		    app_warning "$name$url\t[Killed]\n";
 			$exitval = 2;
 			return $exitval;
 		}
 		else {
 #		    unlink $saveas_temp if(-f $saveas_temp);
-		    app_error "$name$url\t[failed]\n";
+		    app_error "$name$url\t[Failed]\n";
 		    &log("$url->$saveas\n","$FAILLOG") if($options->{log});
 			$exitval = 1;
 			next;

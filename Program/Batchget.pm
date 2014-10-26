@@ -28,7 +28,6 @@ my @OPTIONS = qw/
               /;
 
 my $URL_DATABASE_FILE = 'URLS.txt';
-
 sub load_database {
 	my $self = shift;
 	$self->{database} = {} unless($self->{database});
@@ -56,7 +55,7 @@ sub save_database {
 	return 1 unless($self->{database});
 	app_message("Save URLs database...\n");
     open FO,">",$URL_DATABASE_FILE or return;
-    foreach (keys %{$self->{database}}) {
+    foreach (sort keys %{$self->{database}}) {
         print FO $_,"\n";
     }
     close FO;
@@ -125,6 +124,15 @@ sub set_workdir {
     }
     chdir $w or die("$!\n");
     return $w;
+}
+
+sub set_reportor {
+	my $self = shift;
+	if(@_) {
+		$self->{reportor} = shift;
+		$self->{reportor_data} = shift;
+	}
+	return $self;
 }
 
 sub new {
@@ -205,7 +213,7 @@ sub add {
 		$url = $1;
 		$name = $2;
     }
-    if($self->check_database("$url$name")) {
+    if($self->check_database($name ? "$url\t$name" : $url)) {
         app_warning("[Ignored, In DATABASE]$url\n");
 		return undef;
     }
@@ -218,6 +226,15 @@ sub reset {
 	$self->{tasks} = [];
 	$self->{IAMKILLED} = 0;
 	return $self;
+}
+
+sub download_done {
+	my $self = shift;
+	my $url = shift;
+	my $exitval = shift;
+	if($self->{reportor}) {
+		$self->{reportor}->($self->{reportor_data},$url,$exitval);
+	}
 }
 
 sub execute {
@@ -234,7 +251,7 @@ sub execute {
 	else {
 		$OPTS = $self->{options};
 	}
-	my %OPTS = %$OPTS;
+	my %OPTS = $OPTS ? %$OPTS : ();
 	my $def_mul=3;
 	my $createdir = $OPTS{"createdir"} ? $OPTS{"createdir"} : 0;
 	my $muldown   = $OPTS{"maxtask"} ? $OPTS{"maxtask"} : $def_mul;
@@ -275,9 +292,10 @@ sub execute {
 		-maxtime=>$OPTS{maxtime} || '0',
 		"-d",
 	);
+	$dl->set_reportor(\&download_done,$self);
 	$dl->set("--cookie",$OPTS{cookie}) if($OPTS{cookie});
 	my %QUEUE;
-#	app_message("Have $count tasks total\n");
+	app_message("Queue $count download tasks\n") if($count>1);
 	while (@{$self->{tasks}}) {
 		if($self->{IAMKILLED}) {
 			last;
