@@ -17,6 +17,8 @@ my %EXPS = (
 	'ed2k'=>'^(ed2k:\/\/\|file\|)([^\|]+)(\|.*)$',
 	'http'=>'^(http:\/\/.*\/)([^\/]+)$',
 	'qvod'=>'^(qvod:\/\/.*\|)([^\|]+?)(\|?)$',
+	'torrent'=>'^(torrent:\/\/)([A-Za-z0-9]+)\|?(.+)$',
+	'magnet'=>'^(magnet:\?[^\t]+)',
 );
 my $MSG = MyPlace::Script::Message->new('saveurl');
 my @DOWNLOADS;
@@ -35,6 +37,7 @@ sub parse_options {
 	no-bdhd|nb
 	no-file|nf
 	no-data|nd
+	no-torrent|nt
 	no|n=s
 	/;
 	my %OPTS;
@@ -154,7 +157,7 @@ sub blocked {
 sub normalize {
 	my $_ = $_[0];
 	if($_) {
-		s/[\/:\\]/ /g;
+		s/[\?\*\/:\\]/ /g;
 	}
 	return $_;
 }
@@ -185,7 +188,7 @@ sub process_file {
 #		print STDERR "Ignored: File exists, $filename\n";
 #		return;
 #	}
-	$MSG->green("Saving file: $filename\n");
+	$MSG->green("Saving file:\n==> $filename\n");
 	system('mv','--',$link,$filename);
 }
 
@@ -220,7 +223,7 @@ sub process_bdhd {
 	$filename =~ s/\.bdhd$//;
 	if($link && $filename) {
 		$filename = $filename . ".bsed";
-		$MSG->green("Saving file: $filename\n");
+		$MSG->green("Saving text file:\n==> $filename\n");
 		open FO,'>:utf8',$filename;
 		#open FO,'>:utf8',$filename;
 		print FO 
@@ -268,7 +271,7 @@ sub process_qvod {
 	}
 	$filename =~ s/\.qvod$//;
 	if($link && $filename) {
-		$MSG->green("Saving file: $filename.qsed\n");
+		$MSG->green("Saving text file\n==> $filename.qsed\n");
 		open FO,'>:utf8',$filename . '.qsed';
 		print FO 
 <<"EOF";
@@ -287,12 +290,51 @@ sub process_data {
 	my $filename = shift;
 	return unless($filename);
 	$data =~ s/\0/\n/g;
-	print STDERR "Saving file: $filename\n";
-	open FO,">:utf8",$filename or die("$!\n");
+	print STDERR "Saving file:\n==> $filename\n";
+	open FO,">:raw",$filename or die("$!\n");
 	#open FO,">:utf8",$filename or die("$!\n");
 		print FO $data;
 	close FO;
 }
+
+sub process_torrent {
+	my $self = shift;
+	my $hash = shift;
+	my $title = shift;
+	if($title) {
+		return system("download_torrent",$hash,normalize($title)) == 0;
+	}
+	else {
+		return system("download_torrent",$hash) == 0;
+	}
+}
+
+sub process_magnet {
+	my $self = shift;
+	my $URI = shift;
+	my $title = shift;
+	$URI =~ s/&amp;/&/g;
+	if(!$title) {
+		if($URI =~ m/[&\?]dn=([^&]+)/) {
+			$title = $1;
+		}	
+	}
+	my $filename = normalize($title) . ".txt";
+	print STDERR "Saving text file:\n==> $filename\n";
+	if(open FO,">:utf8",$filename) {
+		print FO $URI,"\n";
+		close FO;
+	}
+	else {
+		print STDERR "Error:$!\n";
+	}
+	
+	if($URI =~ m/[&\?]xt=urn:btih:([A-Za-z0-9]+)/) {
+		my $hash = uc($1);
+		$self->process_torrent($hash,$title);
+	}
+}
+
 
 sub doTasks {
 	my $self = shift;
@@ -355,6 +397,15 @@ sub doTasks {
 		}
 		elsif(m/^data:\/\/(.+)\t(.+)$/) {
 			$self->process_data($1,$2);
+		}
+		elsif(m/$EXPS{torrent}/) {
+			$self->process_torrent($1,$2);
+		}
+		elsif(m/$EXPS{magnet}\t(.+)$/) {
+			$self->process_magnet($1,$2);
+		}
+		elsif(m/$EXPS{magnet}/) {
+			$self->process_magnet($1);
 		}
 		else {
 			$MSG->warning("Ignored: URL not supported [$_]\n");

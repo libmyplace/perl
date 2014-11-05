@@ -55,7 +55,7 @@ sub color_print($$@) {
         unshift @_,$out;
     }
     my $color=shift;
-    if($ENV{OS} and $ENV{OS} =~ /windows/i) {
+    if(0 and $ENV{OS} and $ENV{OS} =~ /windows/i) {
         print STDERR @_;
     }
     else {

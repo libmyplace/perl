@@ -23,7 +23,7 @@ my @CURL = qw{
             --connect-timeout 15
 };
 #--location
-push @CURL,"--user-agent","Mozilla/5.0 (Windows NT 6.1; rv:24.0) Gecko/20100101 Firefox/24.0";
+push @CURL,"--user-agent",'Mozilla/5.0 (X11; U; Linux i686; en-US; rv:1.9.0.3) Gecko/2008092416 Firefox/3.0.3 Firefox/3.0.1';
 my $PROXY = '127.0.0.1:9050';
 my $BLOCKED_HOST = 'wretch\.cc|facebook\.com|fbcdn\.net';
 my $BLOCKED_EXP = qr/^[^\/]+:\/\/[^\/]*(?:$BLOCKED_HOST)(?:\/?|\/.*)$/;

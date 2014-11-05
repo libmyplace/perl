@@ -276,11 +276,18 @@ sub update_database {
 	return unless($dirs);
 	foreach(@$dirs) {
 		app_warning "Updating database [$_] ...";
+		if($self->{DEBUG}) {
+			print STDERR "\n";
+			app_warning "DEBUG MODE: update NOTHING\n";
+			next;
+		}
 		run("find \"$_/\" -type f >\"$_.txt\"");
 		run("grep \\.txt\$ \"$_.txt\" | xargs git add --force --verbose");
 		print STDERR "\n";
 		run("git add --force --verbose \"$_.txt\"");
+		$self->pending_commit("Update database [$_]",['add',"$_.txt"]);
 	}
+	
 }
 
 sub status_update {

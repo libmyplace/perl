@@ -38,16 +38,19 @@ my $proxy = '127.0.0.1:9050';
 my $blocked_host = '\n';#wretch\.cc|facebook\.com|fbcdn\.net';
 my $BLOCKED_EXP = qr/^[^\/]+:\/\/[^\/]*(?:$blocked_host)(?:\/?|\/.*)$/;
 my @WGET = qw{
-    wget --user-agent Mozilla/5.0 --connect-timeout 15 -q --progress bar
+    wget --connect-timeout 15 -q --progress bar
 };
 my @CURL = qw{
         curl
 		--fail --globoff --location
-		--user-agent Mozilla/5.0
 		--progress-bar --create-dirs
 		--connect-timeout 15
 		--location
 };
+my $UA = 'Mozilla/5.0 (X11; U; Linux i686; en-US; rv:1.9.0.3) Gecko/2008092416 Firefox/3.0.3 Firefox/3.0.1';
+push @WGET,'--user-agent',$UA;
+push @CURL,'--user-agent', $UA;
+
 sub new {
 	my $class = shift;
 	my $self = bless {},$class;
