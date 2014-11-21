@@ -39,6 +39,7 @@ sub parse_options {
 	no-data|nd
 	no-torrent|nt
 	no|n=s
+	thread|t=i
 	/;
 	my %OPTS;
 	Getopt::Long::Configure('no_ignore_case');
@@ -420,6 +421,7 @@ sub doTasks {
 		$BATCHGET->set("--referer",$OPTS{referer}) if($OPTS{referer});
 		$BATCHGET->set("--no-clobber") unless($OPTS{overwrite});
 		$BATCHGET->set("--urlhist") if($OPTS{history});
+		$BATCHGET->set("--maxtask",$OPTS{thread}) if($OPTS{thread});
 		foreach(@DOWNLOADS) {
 			$BATCHGET->add("$_->[0]\t$_->[1]");
 		}

@@ -287,7 +287,12 @@ sub execute {
 	}
 
 	#app_message("Initializing...\n");
-	para_init $muldown if($count > 1);
+	if($count > 1 and $muldown>1) {
+		para_init $muldown;
+	}
+	else {
+		app_warning("Use single thread for downloading\n");
+	}
 	my $dl = new MyPlace::Program::Download (
 		-maxtime=>$OPTS{maxtime} || '0',
 		"-d",
@@ -348,7 +353,7 @@ sub execute {
 				'-url'=>$url,
 				$OPTS{'dl-force'} ? '-f' : (),
 			);
-			if($count > 1) {
+			if($count > 1 and $muldown>1) {
 				para_queue(\&download,$self,$dl,@args);
 			}
 			else {
@@ -366,7 +371,7 @@ sub execute {
 #			}
 	    }
 	}
-	para_cleanup() if($count > 1);
+	para_cleanup() if($count > 1 and $muldown>1);
 	chdir $PWD;
 	$self->save_database() if($urlhist);
 	if($self->{IAMKILLED}) {

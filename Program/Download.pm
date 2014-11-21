@@ -323,9 +323,16 @@ sub _download {
 			next;
 		}
 		elsif($r==0 and @data) {
-			open FO, ">:raw",$saveas or die("Error writting $saveas: $!\n");
-			print FO @data;
-			close FO;
+			if(open FO, ">:raw",$saveas) {
+				print FO @data;
+				close FO;
+			}
+			else {
+				app_error("Error writting $saveas: $!\n");
+				$exitval = 4;
+				die();
+				next;
+			}
 #		    unlink ($saveas) if(-f $saveas);
 #		    rename($saveas_temp,$saveas) or die("$!\n");
 		    &log("$url->$saveas\n","$DOWNLOADLOG") if($options->{log});
