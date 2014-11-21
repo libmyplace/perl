@@ -35,7 +35,7 @@ sub read_tasks {
 		print STDERR "[$MODULENAME] Error, file not exist: $file\n";
 		return;
 	}
-	if(!open FI,'<:utf8',$file) {
+	if(!open FI,'<',$file) {
 		print STDERR "[$MODULENAME] Error opening <$file> for reading: $!\n";
 		return;
 	}
@@ -63,7 +63,7 @@ sub read_tasks {
 	}
 	close FI;
 	if($modified && $writeback) {
-		if(open FO,">:utf8",$file) {
+		if(open FO,">",$file) {
 			print FO join("\n",@text);
 			close FO;
 		}
