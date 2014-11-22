@@ -33,6 +33,8 @@ my @OPTIONS = qw/
 		maxtime|m:i
 		force|f
 		connect-timeout:i
+		maxtry|mt:i
+		quiet
 	/;
 my $proxy = '127.0.0.1:9050';
 my $blocked_host = '\n';#wretch\.cc|facebook\.com|fbcdn\.net';
@@ -127,7 +129,7 @@ sub log($$) {
 }
 
 sub build_cmdline {
-    my($name,$url,$saveas,$refer,$cookie,$verbose,$maxtime) = @_;
+    my($name,$url,$saveas,$refer,$cookie,$quiet,$maxtime) = @_;
     return undef unless($url);
     my @result;
     if($name =~ /^wget$/i) {
@@ -147,6 +149,7 @@ sub build_cmdline {
         push @result,"--cookie",$cookie if(-f $cookie);
         push @result,"--cookie-jar",$cookie if($cookie);
         push @result,"--max-time",$maxtime if($maxtime);
+		push @result,"--silent" if($quiet);
         if($url =~ $BLOCKED_EXP) {
             app_message "USE PROXY $proxy\n";
             push @result,"--socks5-hostname",$proxy;
@@ -158,12 +161,12 @@ sub build_cmdline {
 sub _process {
     my $taskname=shift;
     my $cmdline=shift;
-    my $retry = shift || 2;
+    my $retry = shift(@_) || 0;
     my $r=0;
     while($retry) {
         $retry--;
 		my @data;
-		if(open FI,'-|',@{$cmdline}) {
+		if(open FI,'-|:raw',@{$cmdline}) {
 		#	return undef,"$!";
 			@data = <FI>;
 			close FI;
@@ -186,6 +189,7 @@ sub _process {
 			or $r == 47
 			or $r == 52
 			);
+		last unless($retry);
         app_warning "\rdownload:error($r), wait 1 second,retry($retry):\n$taskname\n";
         sleep 1;
     }
@@ -283,7 +287,7 @@ sub _download {
 		else {
 		    $message = "\n$name$url\n";
 		}
-		print STDERR $message;#fixlength_msg($message,60);
+		print STDERR $message unless($options->{quiet});
 		
 		if ((!$options->{force}) and -f "$saveas" ) {
 		    app_warning "$saveas exists\t[Canceled]\n";
@@ -293,7 +297,7 @@ sub _download {
 		
 		if($cookie) {
 		    if(!-f $cookie) {
-		        app_message "Creating cookie for $url...\n";
+		        app_message "Creating cookie for $url...\n" unless($options->{quiet});
 		        my @match = $url =~ /^(http:\/\/[^\/]+)\//;
 		        if(@match) {
 		            my $domain=$match[0];
@@ -310,10 +314,19 @@ sub _download {
 #			$saveas_temp,
 			$refer,
 			$cookie,
-			$options->{verbose},
+			$options->{quiet},
 			$options->{maxtime}
 		);
-		my ($r,@data)=_process("$name$url",\@cmdline,($url =~ m/weipai\.cn/ ? 10 : 2));
+		my $maxtry = $options->{maxtry};
+		if(!$maxtry) {
+			if($url =~ m/weipai\.cn/) {
+				$maxtry = 10;
+			}
+			else {
+				$maxtry = 2;
+			}
+		}
+		my ($r,@data)=_process("$name$url",\@cmdline,$maxtry);
 		if(defined $self->{reportor}) {
 			$self->{reportor}->($self->{reportor_data},$url,$r);
 		}
@@ -330,25 +343,24 @@ sub _download {
 			else {
 				app_error("Error writting $saveas: $!\n");
 				$exitval = 4;
-				die();
 				next;
 			}
 #		    unlink ($saveas) if(-f $saveas);
 #		    rename($saveas_temp,$saveas) or die("$!\n");
 		    &log("$url->$saveas\n","$DOWNLOADLOG") if($options->{log});
-		    app_ok "$name$saveas\t[Completed]\n";
+		    app_ok "$name$saveas\t[Completed]\n" unless($options->{quiet});
 			$exitval = 0;
 			next;
 		}
 		elsif($r==2) {
 #		    unlink $saveas_temp if(-f $saveas_temp);
-		    app_warning "$name$url\t[Killed]\n";
+		    app_warning "$name$url\t[Killed]\n" unless($options->{quiet});
 			$exitval = 2;
 			return $exitval;
 		}
 		else {
 #		    unlink $saveas_temp if(-f $saveas_temp);
-		    app_error "$name$url\t[Failed]\n";
+		    app_error "$name$url\t[Failed]\n" unless($options->{quiet});
 		    &log("$url->$saveas\n","$FAILLOG") if($options->{log});
 			$exitval = 1;
 			next;

@@ -302,11 +302,12 @@ sub process_torrent {
 	my $self = shift;
 	my $hash = shift;
 	my $title = shift;
+	require MyPlace::Program::DownloadTorrent;
 	if($title) {
-		return system("download_torrent",$hash,normalize($title)) == 0;
+		return MyPlace::Program::DownloadTorrent::download_torrent($hash,normalize($title)) == 0;
 	}
 	else {
-		return system("download_torrent",$hash) == 0;
+		return MyPlace::Program::DownloadTorrent::download_torrent($hash) == 0;
 	}
 }
 
