@@ -25,14 +25,10 @@ sub process {
 			$r = $TASK_STATUS->{ERROR};
 			$task->{summary} = "Error changing directory to " . $task->{workdir} . ": $!";
 			app_error $task->{summary},"\n";
-		}
-		else {
-			($r,$s) = $self->{routine}->($task,$task->content());
+			return $r;
 		}
 	}
-	else {
-		($r,$s) = $self->{routine}->($task,$task->content());
-	}
+	($r,$s) = $self->{routine}->($task,$task->content());
 	if(!$r) {
 		$task->{status} =  $TASK_STATUS->{FINISHED};
 	}
@@ -40,10 +36,25 @@ sub process {
 		$task->{status} = $r;
 	}
 	if($s) {
-		$task->{summary} = $s;
+		if(ref $s) {
+			return $self->process_result($task,@$s);
+		}
+		else {
+			$task->{summary} = $s;
+		}
 	}
 	$task->{time_end} = time;
 	return $task->{status};
 }
+
+sub process_result {
+	my $self = shift;
+	my $task = shift;
+	foreach my $r (@_) {
+		if(ref $r) {
+		}
+	}
+}
+
 1;
 

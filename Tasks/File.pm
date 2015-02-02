@@ -26,6 +26,7 @@ sub read_tasks {
 	my $file = shift;
 	my $namespace = shift;
 	my $writeback = shift;
+	my $as_array = shift;
 	my $modified = 0;	
 	if(!$file) {
 		print STDERR "[$MODULENAME} Error, load nothing from nothing\n";
@@ -43,6 +44,7 @@ sub read_tasks {
 	my @tasks;
 	my @text;
 	foreach(<FI>) {
+		#print STDERR $_;
 		chomp;
 		s/^\s*//;
 		s/\s*$//;
@@ -58,7 +60,13 @@ sub read_tasks {
 			$modified = 1;
 			push @text,">$_";
 		}	
-		my $task = MyPlace::Tasks::Task->new(@prefix,split(/\s*(?:[\>\?\t]|\\t)\s*/,$_));
+		my $task;
+		if($as_array) {
+			$task = [@prefix,split(/\s*(?:[\>\t]|\\t)\s*/,$_)];
+		}
+		else {
+			$task = MyPlace::Tasks::Task->new(@prefix,split(/\s*(?:[\>\t]|\\t)\s*/,$_));
+		}
 		push @tasks,$task;
 	}
 	close FI;

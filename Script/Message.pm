@@ -2,7 +2,7 @@
 package MyPlace::Script::Message;
 BEGIN {
     use Exporter ();
-	use Term::ANSIColor qw/color colored/;
+	use Term::ANSIColor;
     our ($VERSION,@ISA,@EXPORT,@EXPORT_OK,%EXPORT_TAGS);
     $VERSION        = 1.00;
     @ISA            = qw(Exporter);
@@ -27,6 +27,31 @@ my %CHANNEL = (
 	"RESET"=>"RESET",
 );
 no warnings;
+
+sub color {
+	if($ENV{TERM} && $ENV{TERM} ne "dump") {
+		goto &Term::ANSIColor::color;
+	}
+	return '';
+}
+
+sub colored {
+	if($ENV{TERM} && $ENV{TERM} ne "dump") {
+		goto &Term::ANSIColor::colored;
+	}
+	else {
+		my ($first, @rest) = @_;
+    	my ($string, @codes);
+    	if (ref($first) && ref($first) eq 'ARRAY') {
+        	@codes = @{$first};
+        	$string = join q{}, @rest;
+    	} else {
+        	$string = $first;
+        	@codes  = @rest;
+    	}
+    	return $string;
+	}
+}
 
 sub color_channel($) {
 	return $CHANNEL{$_[0]} if(@_);

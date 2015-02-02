@@ -2,7 +2,28 @@
 package MyPlace::Program;
 use strict;
 use warnings;
+BEGIN {
+    require Exporter;
+    our ($VERSION,@ISA,@EXPORT,@EXPORT_OK,%EXPORT_TAGS);
+    $VERSION        = 1.00;
+    @ISA            = qw(Exporter);
+    @EXPORT         = qw();
+    @EXPORT_OK      = qw(\%EXIT_CODE &EXIT_CODE);
+}
 use Getopt::Long qw/GetOptionsFromArray/;
+
+our %EXIT_CODE = (
+	OK=>0,
+	ERROR=>1,
+	KILLED=>2,
+	FAILED=>11,
+	IGNORED=>12,
+	UNKNOWN=>19,
+);
+
+sub EXIT_CODE {
+	return $_[0] ? ($EXIT_CODE{$_[0]} || $_[0]) : $EXIT_CODE{UNKNOWN};
+}
 
 my $DEF_OPTIONS = [qw/
 	help|h|? 
@@ -11,8 +32,16 @@ my $DEF_OPTIONS = [qw/
 sub new {
 	my $class = shift;
 	my $self = bless {},$class;
-	$self->{DEF_OPTIONS} = $self->OPTIONS;
-	$self->set(@_) if(@_);
+	my @DEF_OPTIONS = $self->OPTIONS;
+	$self->{DEF_OPTIONS} = \@DEF_OPTIONS if(@DEF_OPTIONS);
+	my $opt = shift;
+	if($opt and ref $opt) {
+		$self->{options} = $opt;
+	}
+	elsif($opt) {
+		unshift @_,$opt;
+	}
+	$self->{ARGV} = [@_] if(@_);
 	return $self;
 }
 
@@ -38,11 +67,11 @@ sub set {
 		$OPT{'help'} = 1;
 	}
 	$self->{options} = cathash($self->{options},\%OPT);
-	push @{$self->{argv}},@_ if(@_);
+	push @{$self->{ARGV}},@_ if(@_);
 }
 
 sub OPTIONS {
-	return $DEF_OPTIONS;
+	return @$DEF_OPTIONS;
 }
 
 sub USAGE {
@@ -54,7 +83,7 @@ sub USAGE {
 
 sub MAIN {
 	print STDERR "sub MAIN not implemented\n";
-	return;
+	return 1;
 }
 
 sub execute {
@@ -67,7 +96,7 @@ sub execute {
 	}
 	else {
 		$OPT = $self->{options};
-		@_ = $self->{argv} ? @{$self->{argv}} : ();
+		@_ = @{$self->{ARGV}} if($self->{ARGV} && @{$self->{ARGV}});
 	}
 	if((!@_) && $self->{NEEDARGV}) {
 		$OPT->{help} = 1;
@@ -78,7 +107,33 @@ sub execute {
 	elsif($OPT->{manual}) {
 		return $self->USAGE('--exitval'=>1,'-verbose'=>2);
 	}
+	$self->{ARGV} = [];
 	return $self->MAIN($OPT,@_);
+}
+
+my $MSG_PROMPT = '';
+
+sub init_print {
+	my $self = shift;
+	$self->{MSG_PROMPT} = join(" ",@_);
+}
+
+sub print_msg {
+	my $self = shift;
+	my $MSG_PROMPT = $self->{MSG_PROMPT} || '';
+	print STDERR "$MSG_PROMPT> ",@_;
+}
+
+sub print_err {
+	my $self = shift;
+	my $MSG_PROMPT = $self->{MSG_PROMPT} || '';
+	print STDERR "$MSG_PROMPT> ",@_;
+}
+
+sub print_warn {
+	my $self = shift;
+	my $MSG_PROMPT = $self->{MSG_PROMPT} || '';
+	print STDERR "$MSG_PROMPT> ",@_;
 }
 
 1;

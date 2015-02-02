@@ -149,7 +149,7 @@ sub _collect_data {
 			my $name = $def->{name};
 			app_message2 "Collect data for [$name\] from <$data>\n";
 			#print STDERR "Read from $source\n";
-			open FI,'<:utf8',$data or return;
+			open FI,'<',$data or return;
 			foreach(<FI>) {
 				chomp;
 				next unless($_);
@@ -160,7 +160,7 @@ sub _collect_data {
 			}
 			close FI;
 		}
-		else {
+		elsif($data !~ m/[\/\\]/) {
 			push @r,$data;
 		}
 	}

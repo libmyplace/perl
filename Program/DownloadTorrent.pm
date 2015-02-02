@@ -32,14 +32,14 @@ my $SCRIPTDIR;
 our @SITES = (
 	#http://www.520bt.com/Torrent/:HASH:
 	#http://torcache.net/torrent/:HASH:.torrent	
+	#http://torrage.ws/torrent/:HASH:.torrent
+	#http://torrentproject.se/torrent/:HASH:.torrent
 	qw{
-		http://torcache.net/torrent/:HASH:/TORRENTNAME.torrent
-		http://torrentproject.se/torrent/:HASH:.torrent
+		http://www.sobt.org/Tool/downbt?info=:HASH:
+		http://torcache.net/torrent/:HASH:?title=TORRENTNAME
 		http://www.torrenthound.com/torrent/:HASH:
 		http://torrage.com/torrent/:HASH:.torrent
 		http://zoink.it/torrent/:HASH:.torrent
-		http://torrage.ws/torrent/:HASH:.torrent
-		http://www.sobt.org/url.php?hash=:HASH:&name=TORRENTNAME
 	}
 );
 
@@ -53,11 +53,18 @@ sub checktype {
 	}
 	return undef,$type;
 }
+sub normalize {
+	my $_ = $_[0];
+	if($_) {
+		s/[\?\*\/:\\]/ /g;
+	}
+	return $_;
+}
 sub download {
 	my $output = shift;
 	my $URL = shift;
 	my $REF = shift(@_) || $URL;
-	$DL ||= MyPlace::Program::Download->new('--quiet','--maxtry',1);
+	$DL ||= MyPlace::Program::Download->new('--compressed','--quiet','--maxtry',1);
 	if($DL->execute("-r=$REF","-u=$URL","-s=$output") == 0) {
 		my ($ok,$type) = checktype($output);
 		if($ok) {
@@ -71,24 +78,30 @@ sub download {
 	return undef;
 }
 
+
 sub download_torrent {
 	my $URI = shift;
 	my $title = shift;
 	my $dest = shift;
 	my $filename = shift;
-	my $hash = uc($URI);
 
-	if($hash =~ m/^([\dA-Z]+)\s*\t\s*(.+?)\s*$/) {
+	
+	if(!$title and $URI =~ m/^([^\t]+)\t(.+)$/) {
+		$URI = $1;
+		$title = $2;
+	}
+
+	my $hash;
+
+	if($URI =~ m/^([\dA-Za-z]+)$/) {
 		$hash = uc($1);
-		$title = $2 if(!$title);
+	}
+	elsif(uc($URI) =~ m/^MAGNET:\?.*XT=URN:BTIH:([\dA-Z]+)/) {
+			$hash = $1;
 	}
 	else {
-		if($URI =~ m/^magnet:\?.*xt=urn:btih:([\dA-Za-z]+)/) {
-			$hash = uc($1);
-		}
-		if(!$title and $URI =~ m/[^\t]+\t(.+)$/) {
-			$title = $1;
-		}
+		app_error "No HASH information found in $URI\n";
+		return 1;
 	}
 	
 	my $output = "";
@@ -105,7 +118,10 @@ sub download_torrent {
 			}
 			chomp($title) if($title);
 		}
-		$filename = ($title ? $title . "_" : "") . $hash . ".torrent";
+		$filename = ($title ? normalize($title) . "_" : "") . $hash;
+	}
+	else {
+		$filename =~ s/\.torrent$//gi;
 	}
 	if($dest) {
 		$output = File::Spec->catfile($dest,$filename);
@@ -113,28 +129,45 @@ sub download_torrent {
 	else {
 		$output = $filename;
 	}
-	
-	app_message2 "Downloading torrent:\n==> $output\n";
+
+	app_message "\n$URI\n";
+	if($URI =~ m/^(magnet:[^\t]+)/) {
+		$URI =~ s/&amp;/&/g;
+		app_message2 "Save magnet uri:\n  =>$filename.txt\n";
+		if(open FO,">:utf8",$output . ".txt") {
+			print FO $URI,"\n";
+			close FO;
+			print STDERR "[OK]\n";
+		}
+		else {
+			print STDERR "Error:$!\n";
+		}
+	}
+	app_message2 "Save torrent file:\n  =>$filename.torrent\n";
+	$output .= ".torrent";
 	if(checktype($output)) {
 		app_warning "Error, File already downloaded, Ignored\n";
 		return 0;
 	}
-	foreach(@SITES,@SITES) {
-		my $sitename = $_;
-		if(m/:\/\/([^\/]+)/) {
+	foreach my $site (@SITES) {
+		my $sitename = $site;
+		if($site =~ m/:\/\/([^\/]+)/) {
 			$sitename = $1;
 		}
-		my $url = $_;
+		my $url = $site;
 		$url =~ s/:HASH:/$hash/g;
-		print STDERR "Try [$sitename] ... ";
+#		print STDERR "<= $url\n";
+		print STDERR "  Try [$sitename] ... ";
 		if(download($output,$url)) {
 			color_print('GREEN',"  [OK]\n");
+			color_print('GREEN', "[OK]\n\n");
 			return 0;
 		}
 		else {
-			color_print('red',"  [FAILED]\n");
+			color_print('RED',"  [FAILED]\n");
 		}
 	}
+	color_print('RED',"[Failed]\n\n");
 	return 1;
 }
 
@@ -146,7 +179,7 @@ sub USAGE {
 }
 
 sub OPTIONS {
-	return \@OPTIONS;
+	return @OPTIONS;
 }
 
 sub MAIN {
@@ -177,6 +210,11 @@ sub MAIN {
 	}
 }
 
+return 1 if caller;
+my $PROGRAM = new MyPlace::Program::DownloadTorrent;
+exit $PROGRAM->execute(@ARGV);
+
+
 
 __END__
 
@@ -184,11 +222,13 @@ __END__
 
 =head1  NAME
 
-download_torrent - PERL script
+download_torrent - Bittorrent torrent file downloader
 
-=head1  SYNOPSIS
+=head1 SYNOPSIS
 
-download_torrent [options] ...
+download_torrent [options] <hash value|magnet URI> <title>
+
+	download_torrent ADFDSFEWAFDSAFDSAFDGREARAGFDSFD2214DAFDSA sorrynoname
 
 =head1  OPTIONS
 
@@ -206,15 +246,11 @@ Print a brief help message and exits.
 
 View application manual
 
-=item B<--edit-me>
-
-Invoke 'editor' against the source
-
 =back
 
 =head1  DESCRIPTION
 
-___DESC___
+Bittorrent torrent files downloader
 
 =head1  CHANGELOG
 
@@ -229,13 +265,4 @@ xiaoranzzz <xiaoranzzz@MyPlace>
 =cut
 
 #       vim:filetype=perl
-BEGIN {
-    require Exporter;
-    our ($VERSION,@ISA,@EXPORT,@EXPORT_OK,%EXPORT_TAGS);
-    $VERSION        = 1.00;
-    @ISA            = qw(Exporter);
-    @EXPORT         = qw();
-    @EXPORT_OK      = qw();
-}
-1;
 

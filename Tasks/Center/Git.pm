@@ -2,7 +2,7 @@
 package MyPlace::Tasks::Center::Git;
 use strict;
 use warnings;
-use parent "MyPlace::Tasks::Center";
+use base "MyPlace::Tasks::Center";
 use MyPlace::Tasks::File qw/read_tasks/;
 use MyPlace::Tasks::Utils qw/strtime/;
 use MyPlace::Script::Message;
@@ -54,10 +54,10 @@ sub git_commit_item {
 		$comment = $commit->{subject} .($comment ?  "\n\n    " . $comment : "");
 	}			
 	if($all) {
-		run("git","commit","-am",$comment);
+		run("git","commit","-uno","-am",$comment);
 	}
 	else {
-		run("git","commit","-m",$comment);
+		run("git","commit","-uno","-am",$comment);
 	}
 	#app_message2 "[" . now() . "] Git>  Commit " . $commit->{comment} . "\n";
 }
@@ -135,7 +135,7 @@ sub git_pull {
 
 sub git_commit {
 	my $self = shift;
-	run('git','commit','-am',$_[0]);
+	run('git','commit','-uno','-am',$_[0]);
 }
 
 sub git_push {
@@ -170,7 +170,7 @@ TREEFILE:
 	foreach my $file (keys %$tree) {
 		#app_message2 "Try reading tasks from $file ...\n";
 		next if($file =~ m/^[^\/\\]+$/); #Ignore files in top directory
-		next if($file =~ m/^\.myplace\//); #Ignore myplace configuration files
+		next if($file =~ m/^$self->{DIR_CONFIG}/); #Ignore myplace configuration files
 		next if($file =~ m/\.(?:log|old)$/);#Ignore log files, backup files
 		next if($file =~ m/\.log\.(?:txt|md)$/);# --
 		next if($file =~ m/README/);#Ignore README
@@ -266,13 +266,13 @@ sub file_changed {
 	my $self = shift;
 	my $filepath = shift;
 	my $msg = shift;
-	$self->pending_commit($msg,['add',$filepath]);
+	$self->pending_commit($msg,['add',"--force","--",$filepath]);
 }
 
 
 sub update_database {
 	my $self = shift;
-	my $dirs = $self->trace;
+	my $dirs = shift || $self->trace;
 	return unless($dirs);
 	foreach(@$dirs) {
 		app_warning "Updating database [$_] ...";
@@ -281,14 +281,15 @@ sub update_database {
 			app_warning "DEBUG MODE: update NOTHING\n";
 			next;
 		}
+		if(m/^-/) {
+			$_ = "./$_";
+		}
 		run("find \"$_/\" -type f >\"$_.txt\"");
-		run("grep \\.txt\$ \"$_.txt\" | xargs git add --force --verbose");
-		print STDERR "\n";
-		run("git add --force --verbose \"$_.txt\"");
-		$self->pending_commit("Update database [$_]",['add',"$_.txt"]);
+		run("git add --force --verbose -- \"$_.txt\"");
+		$self->pending_commit("Update database [$_]",['add',"--","$_.txt"]);
 	}
-	
 }
+
 
 sub status_update {
 	my $self = shift;
@@ -299,7 +300,7 @@ sub status_update {
 	my $task = shift;
 	my $force = shift;
 
-	$self->{status_commit}->{commands} = [['add',".myplace/*"]];
+	$self->{status_commit}->{commands} = [['add',$self->C_FILE('*')]];
 	if($task && !$task->{no_git}) {
 		$self->{status_commit}->{comments} = [] unless($self->{status_commit}->{comments});
 		if(@{$self->{status_commit}{comments}} > 20) {
@@ -311,7 +312,50 @@ sub status_update {
 		if($task->{git_commands}) {
 			push @{$self->{status_commit}->{commands}},@{$task->{git_commands}};
 		}
-
+		if($task->{dir_updated}) {
+			my @dirs = (ref $task->{dir_updated} ? @{$task->{dir_updated}} : ($task->{dir_updated}));
+			foreach my $dir(@dirs) {
+				my $p;
+				my $d;
+				if(ref $dir) {
+					$p = $dir->[0] . "/";
+					$d = $dir->[1];
+				}
+				else {
+					$p = "";
+					$d = $dir;
+				}
+				push @{$self->{status_commit}->{commands}},
+					['add','-v','--ignore-errors','-A','--',"$p$d/","$p$d.txt"];
+				app_warning("Update database [$p: $d]\n");
+				if($self->{DEBUG}) {
+					print STDERR "\n";
+					app_warning "DEBUG MODE: update NOTHING\n";
+				}
+				else {
+					use Cwd qw/getcwd/;
+					my $cwd = getcwd;
+					if($p) {
+						run("touch","-c","--",$p);
+						if(!chdir $p) {
+							app_warning "Error working into directory: $p\n";
+							next;
+						}
+					}
+					run("touch","-c","--",$d);
+					if($d =~ m/^-/) {
+						run("find \"./$d/\" -type f >\"$d.txt\"");
+					}
+					else {
+						run("find \"$d/\" -type f >\"$d.txt\"");
+					}
+					run("git",qw/add --v --ignore-errors -A --/,"$d/","$d.txt");
+					run("git","commit","-uno","-am","Update [$p: $d]\n");
+					run("git","push");
+					chdir $cwd;
+				}
+			}	
+		}
 		if($task->{status} == $TASK_STATUS->{FINISHED} || $task->{status} == $TASK_STATUS->{ERROR}) {
 #			$self->update_database();
 			$self->{status_commit}->{subject} = $task->{title} || $task->to_string;

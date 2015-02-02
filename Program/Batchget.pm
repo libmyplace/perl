@@ -191,9 +191,7 @@ sub readfile {
 	    chomp;
 	    s/^\s+//;
 	    s/\s+$//;
-	    if(!$_) {
-	        next;
-	    }
+		next unless($_);
 		$self->add($_);
 	}
 	close $fh unless($GLOB);
@@ -243,7 +241,7 @@ sub execute {
 	if(@_)
 	{
 		Getopt::Long::Configure('no_ignore_case');
-	    Getopt::Long::GetOptionsFromArray(@_,$OPTS,@OPTIONS);
+	    Getopt::Long::GetOptionsFromArray(\@_,$OPTS,@OPTIONS);
 		MyPlace::Usage::Process($OPTS,$VERSION);
 		$OPTS = cathash($self->{options},$OPTS);
 		$self->add($_) foreach(@_);
@@ -281,6 +279,10 @@ sub execute {
 	}
 	$self->load_database() if($urlhist);
 	$count = $self->{tasks} ? scalar(@{$self->{tasks}}) : 0;
+	if($count < 1) {
+		$self->readfile(\*STDIN);
+		$count = $self->{tasks} ? scalar(@{$self->{tasks}}) : 0;
+	}
 	if($count < 1) {
 		app_error("Nothing to do\n");
 		return 0;
@@ -392,9 +394,9 @@ sub download {
 	return $exitval;
 }
 
-1;
-#print STDERR ("\n");
-#exit 0 unless($count);
+return 1 if caller;
+my $PROGRAM = new(__PACKAGE__);
+exit $PROGRAM->execute(@ARGV);
 
 
 
@@ -507,34 +509,6 @@ A downloader which can download multiple urls at the same time and/or in queue.
 xiaoranzzz <xiaoranzzz@myplace.hell>
 
 =cut
-
-
-1;
-
-__END__
-=pod
-
-=head1  NAME
-
-MyPlace::Program::Batchget - PERL Module
-
-=head1  SYNOPSIS
-
-use MyPlace::Program::Batchget;
-
-=head1  DESCRIPTION
-
-___DESC___
-
-=head1  CHANGELOG
-
-    2012-01-03 18:03  afun  <afun@myplace.hell>
-        
-        * file created.
-
-=head1  AUTHOR
-
-afun <afun@myplace.hell>
 
 
 # vim:filetype=perl

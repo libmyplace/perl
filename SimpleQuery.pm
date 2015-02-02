@@ -252,26 +252,26 @@ sub query {
 					next QUERY;
 				}
 			}
+			my $matched = 0;
 			foreach my $key (@keys) {
 				if($r eq $info{$key}) {
 					push @Id,$key unless($target{$key});
 					$target{$key} = $info{$key};
-					next QUERY;
+					$matched = 1;
 				}
 			}
-			my $matched = 0;
+			next QUERY if($matched);
+
 			foreach my $key (@keys) {
 				if($key =~ m/$r/) {
 					push @Id,$key unless($target{$key});
 					$target{$key} = $info{$key};
-					$matched = 1;
 				}
 			}
 			foreach my $key (@keys) {
 				if($info{$key} =~ m/$r/) {
 					push @Id,$key unless($target{$key});
 					$target{$key} = $info{$key};
-					$matched = 1;
 				}
 			}
 			foreach my $key (@keys) {
@@ -283,10 +283,12 @@ sub query {
 					next QUERY;
 				}
 			}
-			if(!$matched) {
-				return undef,"Query [$r] match nothing in database ($self->{database})";
-			}
+			#if(!$matched) {
+			#	print STDERR "Query [$r] match nothing in database ($self->{database})","\n";
+			#	next QUERY;
+			#}
 		}
+		return undef,"Query [@_] match nothing in database ($self->{database})" unless(@Id);
 	}
 	else {
 		%target = %info;

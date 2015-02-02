@@ -29,7 +29,7 @@ sub load {
 	$self->{hash} = {};
 	$self->{dirty} = 0;
 	if(-f $file) {
-		open FI,'<:utf8',$file or die("reading $file: $!\n");
+		open FI,'<',$file or die("reading $file: $!\n");
 		foreach(<FI>) {
 			chomp;
 			$self->{hash}->{$_} = 1;
@@ -57,7 +57,7 @@ sub save {
 		#app_message(with_color("^(YELLOW)$count^(CYAN) $name in [$file]\n"));
 		return undef;
 	}
-	open FO,'>:utf8',$file or die("writting $file: $!\n");
+	open FO,'>',$file or die("writting $file: $!\n");
 	if($self->{list}) {
 		print FO map "$_\n",@{$self->{list}};
 	}

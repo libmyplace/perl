@@ -17,7 +17,7 @@ my %EXPS = (
 	'ed2k'=>'^(ed2k:\/\/\|file\|)([^\|]+)(\|.*)$',
 	'http'=>'^(http:\/\/.*\/)([^\/]+)$',
 	'qvod'=>'^(qvod:\/\/.*\|)([^\|]+?)(\|?)$',
-	'torrent'=>'^(torrent:\/\/)([A-Za-z0-9]+)\|?(.+)$',
+	'torrent'=>'^torrent:\/\/([A-Za-z0-9]+)\|?(.+)$',
 	'magnet'=>'^(magnet:\?[^\t]+)',
 );
 my $MSG = MyPlace::Script::Message->new('saveurl');
@@ -40,6 +40,7 @@ sub parse_options {
 	no-torrent|nt
 	no|n=s
 	thread|t=i
+	output|o=s
 	/;
 	my %OPTS;
 	Getopt::Long::Configure('no_ignore_case');
@@ -162,6 +163,27 @@ sub normalize {
 	}
 	return $_;
 }
+
+sub process_weipai_urls {
+	my $self = shift;
+	return unless(@_);
+	require MyPlace::Weipai::Downloader;
+	MyPlace::Weipai::Downloader::init();
+	my $exitcode;
+	my @tasks;
+	foreach(@_) {
+		my ($link,$filename) = @$_;
+		if(blocked($link)) {
+			$MSG->warning("Blocked: $link\n");
+			return;
+		}
+		$filename = normalize($filename) if($filename);
+		push @tasks,[$link,$filename];
+	}
+	$exitcode = MyPlace::Weipai::Downloader::download_urls(\@tasks,$self->{OPTS}->{history});
+	return ($exitcode == 0)
+}
+
 sub process_http {
 	my $self = shift;
 	my ($link,$filename) = @_;
@@ -175,6 +197,7 @@ sub process_http {
 		}
 	}
 	$filename = normalize($filename) if($filename);
+
 	#if(-f $filename) {
 	#	$MSG->warning("Ignored: File exists, $filename\n");
 	#	return;
@@ -311,31 +334,6 @@ sub process_torrent {
 	}
 }
 
-sub process_magnet {
-	my $self = shift;
-	my $URI = shift;
-	my $title = shift;
-	$URI =~ s/&amp;/&/g;
-	if(!$title) {
-		if($URI =~ m/[&\?]dn=([^&]+)/) {
-			$title = $1;
-		}	
-	}
-	my $filename = normalize($title) . ".txt";
-	print STDERR "Saving text file:\n==> $filename\n";
-	if(open FO,">:utf8",$filename) {
-		print FO $URI,"\n";
-		close FO;
-	}
-	else {
-		print STDERR "Error:$!\n";
-	}
-	
-	if($URI =~ m/[&\?]xt=urn:btih:([A-Za-z0-9]+)/) {
-		my $hash = uc($1);
-		$self->process_torrent($hash,$title);
-	}
-}
 
 
 sub doTasks {
@@ -348,8 +346,21 @@ sub doTasks {
 	}
 	my $idx = 0 ;
 	my $count = scalar(@{$tasks});
+	my $FH_OUT;
+	if($self->{OPTS}->{output}) {
+		if(!open($FH_OUT,">>",$self->{OPTS}->{output})) {
+			$MSG->error("Error opening " .
+				$self->{OPTS}->{output} .
+				":$!\n"
+			);
+			return 1;
+
+		}
+	}
 	#print STDERR "\n\n$count\n\n";
+	my @weipai_urls;
 	while($idx < $count) {
+		$idx++;
 		my $_ = shift(@{$tasks});
 		my $proto = "http";
 		if($_ =~ m/^([^:\/]+):\/\//) {
@@ -364,6 +375,13 @@ sub doTasks {
 			)
 		) {
 			$MSG->warn("Skip URL TYPE [$proto]: $_\n");
+			next;
+		}
+		if($self->{OPTS}->{output}) {
+			print STDERR "[$idx/$count] " .
+				$self->{OPTS}->{output} . 
+				"<<$_\r";
+			print $FH_OUT $_;
 			next;
 		}
 		s/[\r\n]+/ /g;
@@ -385,6 +403,12 @@ sub doTasks {
 		elsif(m/^(ed2k:\/\/.+)$/) {
 			$self->process_bhdh($1);
 		}
+		elsif(m/^(http:\/\/[^\/]*weipai\.cn\/.*\.(?:jpg|mp4|flv|f4v|mov|ts))\t(.+)$/) {
+			push @weipai_urls,[$1,$2];
+		}
+		elsif(m/^http:\/\/[^\/]*weipai\.cn\/.*\.(?:jpg|mp4|flv|f4v|mov|ts)$/) {
+			push @weipai_urls,[$_];
+		}
 		elsif(m/^(https?:\/\/.+)\t(.+)$/) {
 			$self->process_http($1,$2);
 		}
@@ -404,16 +428,25 @@ sub doTasks {
 			$self->process_torrent($1,$2);
 		}
 		elsif(m/$EXPS{magnet}\t(.+)$/) {
-			$self->process_magnet($1,$2);
+			$self->process_torrent($1,$2);
 		}
 		elsif(m/$EXPS{magnet}/) {
-			$self->process_magnet($1);
+			$self->process_torrent($1);
 		}
 		else {
 			$MSG->warning("Ignored: URL not supported [$_]\n");
 		}
-		$idx++;
 	}
+	if($self->{OPTS}->{output}) {
+		print STDERR "\n";
+		close $FH_OUT;
+		return $count;
+	}
+
+	if(@weipai_urls) {
+		$self->process_weipai_urls(@weipai_urls);
+	}
+
 	my $D = scalar(@DOWNLOADS);
 	return 1 unless($D);
 	
@@ -433,6 +466,7 @@ sub doTasks {
 	return $count;
 }
 
-
-1;
+return 1 if caller;
+my $PROGRAM = new(__PACKAGE__);
+exit $PROGRAM->execute(@ARGV);
 

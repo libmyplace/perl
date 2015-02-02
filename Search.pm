@@ -11,8 +11,7 @@ BEGIN {
     @ISA            = qw(Exporter);
     @EXPORT         = qw(build_keyword build_url get_url);
 }
-
-use LWP::UserAgent;
+use MyPlace::Curl;
 my $HTTP;
 
 sub build_keyword {
@@ -29,6 +28,7 @@ sub build_keyword {
     }
     return $no_or ? join("+",@keywords) : join("+OR+",@keywords);
 }
+
 sub build_url {
     my ($base,$p_ref) = @_;
     my %params = %{$p_ref};
@@ -40,18 +40,16 @@ sub build_url {
 }
 sub get_url {
     my ($URL,$referer,$decoder,$verbose) = @_;
-    print STDERR "$URL..." if($verbose);
+    print STDERR "Retriving $URL..." if($verbose);
     if(!$HTTP) {
-        $HTTP = LWP::UserAgent->new(timeout=>60);
-        $HTTP->agent("Mozilla/5.0");# (X11; U; Linux i686; en-US; rv:1.9.0.3) Gecko/2008092416 Firefox/3.0.3 Firefox/3.0.1");
+        $HTTP = MyPlace::Curl->new();
     }
-    my $res = $HTTP->get($URL,"referer"=>$referer ? $referer : $URL);
-    print STDERR " [" . $res->code . "]\n" if($verbose);
+    my ($status,$data) =  $HTTP->get($URL,"--referer"=>$referer ? $referer : $URL);
     if(wantarray) {
-        return $res, ($decoder ? $decoder->decode($res->content) : $res->content);
+        return ($status, ($decoder ? $decoder->decode($data) : $data));
     }
     else {
-        return $res;
+        return $data;
     }
 }
 

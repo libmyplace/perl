@@ -25,13 +25,33 @@ sub readtext {
 	my @current;
 	foreach(@_) {
 		s/[\r\n\s]+$//;
-		s/^\s+//g;
-		if($_) {
-			push @current,$_;
+		my $is_empty = undef;
+		my $is_content = undef;
+		my $is_newitem = undef;
+		if(!$_) {
+			$is_empty = 1;
 		}
-		elsif(@current) {
+		elsif(m/^\s*$/) {
+			$is_empty = 1;
+		}
+		elsif(m/^\s+/) {
+			$is_content = 1;
+		}
+		else {
+			$is_newitem = 1;
+		}
+
+		if($is_empty and @current) {
 			$self->add(@current);
 			@current = ();
+		}
+		elsif($is_content) {
+			s/^\s+//;
+			push @current,$_;
+		}
+		elsif($is_newitem) {
+			$self->add(@current) if(@current);
+			@current = ($_);
 		}
 	}
 	if(@current) {

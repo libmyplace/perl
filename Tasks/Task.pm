@@ -81,7 +81,7 @@ sub save {
 sub load {
 	my $self = CORE::shift;
 	my $text = CORE::shift(@_) || 'myplace-tasks';
-	($self->{namespace},@{$self->{definition}}) = split(/\t/,$text);
+	($self->{namespace},@{$self->{definition}}) = split(/\s*(?:[\>\t]|\\t)\s*/,$text);
 	return $self;
 }
 

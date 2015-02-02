@@ -35,6 +35,8 @@ my @OPTIONS = qw/
 		connect-timeout:i
 		maxtry|mt:i
 		quiet
+		test
+		compressed
 	/;
 my $proxy = '127.0.0.1:9050';
 my $blocked_host = '\n';#wretch\.cc|facebook\.com|fbcdn\.net';
@@ -49,7 +51,8 @@ my @CURL = qw{
 		--connect-timeout 15
 		--location
 };
-my $UA = 'Mozilla/5.0 (X11; U; Linux i686; en-US; rv:1.9.0.3) Gecko/2008092416 Firefox/3.0.3 Firefox/3.0.1';
+my $UA = 'Mozilla/5.0 (compatible; MSIE 9.0; Windows NT 6.1; Trident/5.0)';
+#'Mozilla/5.0 (X11; U; Linux i686; en-US; rv:1.9.0.3) Gecko/2008092416 Firefox/3.0.3 Firefox/3.0.1';
 push @WGET,'--user-agent',$UA;
 push @CURL,'--user-agent', $UA;
 
@@ -110,11 +113,14 @@ sub execute {
 	}
 	if($OPT->{help}) {
 		pod2usage('-exitval'=>1,'-verbose'=>1);
-		return 1;
+
+		#USAGE;
+		return 3;
 	}
 	elsif($OPT->{manual}) {
 		pod2usage('--exitval'=>1,'-verbose'=>2);
-		return 2;
+		#USAGE
+		return 3;
 	}
 	my $exitval = $self->_download($OPT);
 	return $exitval;
@@ -129,27 +135,33 @@ sub log($$) {
 }
 
 sub build_cmdline {
-    my($name,$url,$saveas,$refer,$cookie,$quiet,$maxtime) = @_;
+    my($name,$url,$saveas,%OPTS) = @_;
+	#my($name,$url,$saveas,$refer,$cookie,$quiet,$maxtime) = @_;
     return undef unless($url);
     my @result;
     if($name =~ /^wget$/i) {
         push @result,@WGET;
-        push @result,"--referer",$refer ? $refer : $url;
+        push @result,"--referer",$OPTS{referer} || $url;
         push @result,"--output-document",$saveas if($saveas);
-        push @result,"--load-cookie",$cookie if(-f $cookie);
-        push @result,"--save-cookie",$cookie if($cookie);
-        push @result,'--read-timeout',$maxtime if($maxtime);
+		if($OPTS{cookie}) {
+			push @result,"--save-cookie",$OPTS{cookie};
+			push @result,"--load-cookie",$OPTS{cookie} if(-f $OPTS{cookie});
+		}	
+        push @result,'--read-timeout',$OPTS{maxtime} if($OPTS{maxtime});
         push @result,$url;
     }
     else {
         push @result,@CURL;
         push @result,"--url",$url;
-        push @result,"--referer",$refer ? $refer : $url;
+        push @result,"--referer",$OPTS{referer} || $url;
         push @result,"--output",$saveas if($saveas);
-        push @result,"--cookie",$cookie if(-f $cookie);
-        push @result,"--cookie-jar",$cookie if($cookie);
-        push @result,"--max-time",$maxtime if($maxtime);
-		push @result,"--silent" if($quiet);
+		if($OPTS{cookie}) {
+	        push @result,"--cookie",$OPTS{cookie} if(-f $OPTS{cookie});
+		    push @result,"--cookie-jar",$OPTS{cookie};
+		}
+        push @result,"--max-time",$OPTS{maxtime} if($OPTS{maxtime});
+		push @result,"--silent" if($OPTS{quiet});
+		push @result,"--compressed" if($OPTS{compressed});
         if($url =~ $BLOCKED_EXP) {
             app_message "USE PROXY $proxy\n";
             push @result,"--socks5-hostname",$proxy;
@@ -163,6 +175,7 @@ sub _process {
     my $cmdline=shift;
     my $retry = shift(@_) || 0;
     my $r=0;
+	#print STDERR join(" ",@{$cmdline}),"\n";
     while($retry) {
         $retry--;
 		my @data;
@@ -187,11 +200,11 @@ sub _process {
 			or $r == 56 
 			or $r == 6 
 			or $r == 47
-			or $r == 52
+		#	or $r == 52
 			);
 		last unless($retry);
-        app_warning "\rdownload:error($r), wait 1 second,retry($retry):\n$taskname\n";
-        sleep 1;
+        app_warning "\rdownload:error($r), wait 2 second,retry($retry):\n$taskname\n";
+        sleep 2;
     }
     return 1,'Failed retrying downloads';
 }
@@ -247,6 +260,12 @@ sub _download {
 			$exitval = 12;
 			next;
 		}
+#		elsif($url =~ m/^http:\/\/(?:oldvideo\.qiniudn\.com)/) {
+#			app_error("URL blocked:$url\n");
+#			$exitval = 12;
+#			next;
+#		}
+
 		if($url =~ m/^([^\t]+)(?:\t+|    )(.+)$/) {
 			$url = $1;
 			$saveas = $2 if($2);
@@ -285,13 +304,13 @@ sub _download {
 		            "Refer",$refer);
 		}
 		else {
-		    $message = "\n$name$url\n";
+		    $message = "\n\t$saveas\n$name$url\n";
 		}
 		print STDERR $message unless($options->{quiet});
 		
 		if ((!$options->{force}) and -f "$saveas" ) {
 		    app_warning "$saveas exists\t[Canceled]\n";
-			$exitval = 13;
+			$exitval = 12;
 			next;
 		}
 		
@@ -311,16 +330,18 @@ sub _download {
 			$downloader,
 			$eurl,
 			undef,
-#			$saveas_temp,
-			$refer,
-			$cookie,
-			$options->{quiet},
-			$options->{maxtime}
+			(
+				referer=>$refer,
+				cookie=>$cookie,
+				quiet=>$options->{quiet},
+				maxtime=>$options->{maxtime},
+				compressed=>$options->{compressed},
+			)
 		);
 		my $maxtry = $options->{maxtry};
 		if(!$maxtry) {
-			if($url =~ m/weipai\.cn/) {
-				$maxtry = 10;
+			if($url =~ m/(?:weipai\.cn|oldvideo\.qiniudn\.com)/) {
+				$maxtry = 4; #10
 			}
 			else {
 				$maxtry = 2;
@@ -333,9 +354,11 @@ sub _download {
 #		print STDERR "EXITVAL:$r\n";
 		if(!defined $r) {
 			app_error("\nExecuting \'" . join(" ",@cmdline) . "\'\nError: ",@data,"\n");
+			$exitval = 13;
 			next;
 		}
 		elsif($r==0 and @data) {
+			next if($options->{test});
 			if(open FO, ">:raw",$saveas) {
 				print FO @data;
 				close FO;
@@ -356,12 +379,15 @@ sub _download {
 #		    unlink $saveas_temp if(-f $saveas_temp);
 		    app_warning "$name$url\t[Killed]\n" unless($options->{quiet});
 			$exitval = 2;
+			#KILLED
 			return $exitval;
 		}
 		else {
 #		    unlink $saveas_temp if(-f $saveas_temp);
 		    app_error "$name$url\t[Failed]\n" unless($options->{quiet});
 		    &log("$url->$saveas\n","$FAILLOG") if($options->{log});
+
+			#FAILED
 			$exitval = 1;
 			next;
 		}
@@ -369,7 +395,11 @@ sub _download {
 	return $exitval;
 }
 
-1;
+return 1 if caller;
+my $PROGRAM = new(__PACKAGE__);
+exit $PROGRAM->execute(@ARGV);
+
+
 
 __END__
 

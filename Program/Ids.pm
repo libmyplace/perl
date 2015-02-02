@@ -289,6 +289,10 @@ Supported commands:
 USAGEEND
 }
 
+return 1 if caller;
+my $PROGRAM = new(__PACKAGE__);
+exit $PROGRAM->execute(@ARGV);
+
 
 
 

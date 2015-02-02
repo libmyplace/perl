@@ -8,12 +8,11 @@ use MyPlace::Script::Message;
 use MyPlace::Tasks::Utils qw/strtime/;
 use MyPlace::Tasks::File qw/read_tasks/;
 
-our $CONFIG_DIR = ".myplace";
-our $CONFIG_TASKS = File::Spec->catfile($CONFIG_DIR,"tasks");
-
 sub new {
 	my $class = shift;
 	my $self = bless {},$class;
+	$self->{config} = shift(@_) || $main::MYSETTING;
+	$self->{DIR_CONFIG} = $self->{config}->{_DIR};
 	$self->{options} = {@_};
 	$self->{tasks} = [];
 	$self->{tasks_done} = [];
@@ -24,9 +23,26 @@ sub new {
 	$self->{status} = 'CLEAR';
 	$self->load();
 	$self->{options}->{sleep} = 60 unless($self->{options}->{sleep});
-	unlink "$CONFIG_DIR/HISTORY.md";
+
+
+	$self->{DIR_KEEPS} = $self->C_FILE('keeps');
+	if(! -d $self->{DIR_KEEPS}) {
+		mkdir $self->{DIR_KEEPS} or print STDERR "Error creating directory: ",$self->{DIR_KEEPS},"\n";
+	}
+
+	$self->{FILE_SUMMARY} = $self->C_FILE('SUMMARY.md');
+	$self->{FILE_HISTORY} = $self->C_FILE('HISTORY.md');
+	$self->{FILE_STATUS} = $self->C_FILE('STATUS.md');
+	$self->{FILE_LOCALTASKS} = $self->C_FILE('localtasks');
+	unlink $self->{FILE_HISTORY};
 	return $self;
 }
+
+sub C_FILE {
+	my $self = shift;
+	return File::Spec->catfile($self->{DIR_CONFIG},@_);
+}
+
 
 sub trace {
 	my $self = shift;
@@ -87,8 +103,8 @@ sub status_update {
 	);
 	
 if(!$self->{DEBUG}) {
-	my $output = ".myplace/STATUS.md";
-	if(open FO,'>:utf8',$output) {
+	my $output = $self->{FILE_STATUS};
+	if(open FO,'>',$output) {
 		print FO "Tasks Status Report\n";
 		print FO "============\n\n";
 		print FO join("\n",$self->status),"\n";
@@ -157,17 +173,18 @@ sub more {
 
 sub read_localfile {
 	my $self = shift;
-	return unless (-f ".myplace/localtasks");
+	my $filename = $self->{FILE_LOCALTASKS};
+	return unless (-f $filename);
 	my $tasks;
 	if($self->{DEBUG}) {
-		$tasks = &read_tasks(".myplace/localtasks","",0);
+		$tasks = &read_tasks($filename,"",0);
 	}
 	else {
-		$tasks = &read_tasks(".myplace/localtasks","",1);
+		$tasks = &read_tasks($filename,"",1);
 	}
 	if($tasks and @{$tasks}) {
 		my $count = @$tasks;
-		app_message2 "Read $count task(s) from <.myplace/localtasks>\n";
+		app_message2 "Read $count task(s) from <$filename>\n";
 		push @{$self->{tasks}},@$tasks;
 	}
 	return $tasks;
@@ -184,8 +201,15 @@ sub next {
 sub queue {
 	my $self = shift;
 	my $task = shift;
+	my $ontop = shift;
 	if($task) {
-		push @{$self->{tasks}},$task;
+		my @tasks = ((ref $task eq 'ARRAY')? @$task : ($task));
+		if($ontop) {
+			unshift @{$self->{tasks}},@tasks;
+		}
+		else {
+			push @{$self->{tasks}},@tasks;
+		}
 	}
 	return $task;
 }
@@ -233,11 +257,12 @@ sub _summary_task {
 	return $r;
 }
 sub _prepend_file {
+	my $self = shift;
 	my $output = shift;
 	my $newtext = shift;
 	my $maxlines = shift(@_) || 0;
 	my @text;
-	if(-f $output and open FI,'<:utf8',$output) {
+	if(-f $output and open FI,'<',$output) {
 		@text = <FI>;
 		close FI;
 	}
@@ -245,6 +270,7 @@ sub _prepend_file {
 		my $lines = scalar(@text);
 		if($lines > $maxlines) {
 			my $saved = $output;
+			$saved =~ s/^.*[\/\\]//;
 			my $datestr = strtime(time(),undef,"","","");
 			if($saved =~ m/\.[^\/\\\.]+$/) {
 				$saved =~ s/\.([^\/\\\.]+)$/_$datestr.$1/;
@@ -252,13 +278,14 @@ sub _prepend_file {
 			else {
 				$saved = $saved . "_" . $datestr;
 			}
+			$saved = File::Spec->catfile($self->{DIR_KEEPS},$saved);
 			if(rename($output,$saved)) {
 				app_message2 "Backup $output \n\t==> $saved\n";
 				@text = ();
 			}
 		}
 	}	
-	if(open FO,'>:utf8',$output) {
+	if(open FO,'>',$output) {
 		print FO $newtext;
 		print FO @text;
 		close FO;
@@ -275,9 +302,9 @@ sub log_task_finished {
 	return unless($task);
 if(!$self->{DEBUG}) {	
 	my $summary = _summary_task($task);
-	_prepend_file(".myplace/HISTORY.md",$summary,0);
+	$self->_prepend_file($self->{FILE_HISTORY},$summary,0);
 	if($task->{status} == $TASK_STATUS->{FINISHED}) {
-		_prepend_file(".myplace/SUMMARY.md",$summary,1000);
+		$self->_prepend_file($self->{FILE_SUMMARY},$summary,1000);
 	}
 }
 	return;
@@ -321,6 +348,10 @@ sub end {
 sub save {
 	my $self = CORE::shift;
 	return unless($self->{config});
+	if($self->{DEBUG}) {
+		app_warning "DEBUG MODE: Configuration not save!\n";
+		return;
+	}
 	my $sec = "Tasks::Center";
 	$self->{config}->{$sec . "::tasks"} = [];
 	push @{$self->{config}->{$sec . "::tasks"}},$_->save() foreach(@{$self->{tasks}});
