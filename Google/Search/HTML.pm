@@ -1,7 +1,7 @@
 #!/usr/bin/perl -w
 package MyPlace::Google::Search::HTML;
 use strict;
-use URI::Escape;
+#use URI::Escape;
 use MyPlace::Search;
 use constant {
     APPID=>'BlVF2czV34FVChK2mzsN7SBghcl.NwZ4YayhlbBXiYxPnRScC49U1ja4HnnF',
@@ -288,7 +288,7 @@ sub search {
 	}
     if($status == 0 and $res) {
         my $code = $res;
-		#print STDERR $code;	
+		#	print STDERR $code;	
 
 		$status = 1;
 		if($ajax eq 'web') {

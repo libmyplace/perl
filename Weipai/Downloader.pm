@@ -112,7 +112,7 @@ sub _parse_suffix {
 	my $r;
 	if(!$suffix) {
 		if($url =~ m/\.jpg$/) {
-			$r = [qw/.mov.3in1.jpg .jpg .1.jpg .2.jpg .3.jpg/];
+			$r = [qw/.mov.3in1.jpg .1.jpg .2.jpg .3.jpg .jpg/];
 		}
 		else {
 			$r = [qw/.flv \/500k.mp4 .mov .f4v/];
@@ -189,7 +189,7 @@ sub _preprocess {
 	}
 	my $exts = {};
 	foreach(@$suffix) {
-		if(m/(\.[^\/]+)$/) {
+		if(m/(\.[^\.]+)$/) {
 			$exts->{$_} = $1;
 		}
 	}

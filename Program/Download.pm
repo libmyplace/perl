@@ -21,22 +21,23 @@ my @OPTIONS = qw/
 		help|h
 		manual|man
 		verbose|v
-		url|u:s
-		saveas|s:s
+		url|u=s
+		saveas|output|o|s=s
 		directory|d
-		name|n:s
+		name|n=s
 		cookie|b:s
 		log|l
-		refurl|r:s
+		refurl|r=s
 		autoname|a
-		program|p:s
-		maxtime|m:i
+		program|p=s
+		maxtime|m=i
 		force|f
-		connect-timeout:i
-		maxtry|mt:i
+		connect-timeout=i
+		maxtry|mt=i
 		quiet
 		test
 		compressed
+		mirror|or=s@
 	/;
 my $proxy = '127.0.0.1:9050';
 my $blocked_host = '\n';#wretch\.cc|facebook\.com|fbcdn\.net';
@@ -97,33 +98,6 @@ sub set {
 	}
 	$self->{options} = cathash($self->{options},\%OPT);
 	push @{$self->{urls}},@_ if(@_);
-}
-
-sub execute {
-	my $self = shift;
-	my $OPT;
-	if(@_) {
-		$OPT= {};
-		GetOptionsFromArray(\@_,$OPT,@OPTIONS);
-		$OPT = cathash($self->{options},$OPT);
-		push @{$self->{urls}},@_ if(@_);
-	}
-	else {
-		$OPT = $self->{options};
-	}
-	if($OPT->{help}) {
-		pod2usage('-exitval'=>1,'-verbose'=>1);
-
-		#USAGE;
-		return 3;
-	}
-	elsif($OPT->{manual}) {
-		pod2usage('--exitval'=>1,'-verbose'=>2);
-		#USAGE
-		return 3;
-	}
-	my $exitval = $self->_download($OPT);
-	return $exitval;
 }
 
 sub log($$) {
@@ -197,7 +171,7 @@ sub _process {
         return $r,$! if(
 			$r == 2 
 		   #or $r == 22 
-			or $r == 56 
+		   #or $r == 56 
 			or $r == 6 
 			or $r == 47
 		#	or $r == 52
@@ -223,9 +197,165 @@ sub fixlength_msg {
 		}
 }
 
+sub execute {
+	goto &download;
+#	my $self = shift;
+#	my $OPT;
+#	if(@_) {
+#		$OPT= {};
+#		GetOptionsFromArray(\@_,$OPT,@OPTIONS);
+#		$OPT = cathash($self->{options},$OPT);
+#		push @{$self->{urls}},@_ if(@_);
+#	}
+#	else {
+#		$OPT = $self->{options};
+#	}
+#	if($OPT->{help}) {
+#		pod2usage('-exitval'=>1,'-verbose'=>1);
+#
+#		#USAGE;
+#		return 3;
+#	}
+#	elsif($OPT->{manual}) {
+#		pod2usage('--exitval'=>1,'-verbose'=>2);
+#		#USAGE
+#		return 3;
+#	}
+#	my $exitval = $self->_download($OPT);
+#	return $exitval;
+}
+
+
+#ReEnterable Entry
+
+sub download {
+	my $self = shift;
+	my $OPT;
+	if(@_) {
+		$OPT= {};
+		GetOptionsFromArray(\@_,$OPT,@OPTIONS);
+		$OPT = cathash($self->{options},$OPT);
+	}
+	else {
+		$OPT = $self->{options};
+	}
+	if($OPT->{help}) {
+		pod2usage('-exitval'=>1,'-verbose'=>1);
+
+		#USAGE;
+		return 3;
+	}
+	elsif($OPT->{manual}) {
+		pod2usage('--exitval'=>1,'-verbose'=>2);
+		#USAGE
+		return 3;
+	}
+	my $exitval;
+	
+	my @urls;
+	push @urls, @{$self->{urls}} if($self->{urls});
+	push @urls,$OPT->{url} if($OPT->{url});
+	push @urls,@_;
+	$self->{urls} = [];
+	delete $OPT->{url};
+
+	my $count = @urls;
+	
+	if(!$count) {
+		app_error("No URL specified\n");
+		return 11;
+	}
+	elsif($count > 1) {
+		########### Multi-URLs download mode
+		delete $OPT->{saveas};
+		$self->{urls} = [@urls];
+		$exitval = $self->_download($OPT);
+		$self->{urls} = [];
+		return $self->_download($OPT);
+	}
+	
+		########### Single URL download mode
+
+	my @mirrors;
+	my $url = $urls[0];
+	my $saveas = $OPT->{saveas};
+	push @mirrors,[$url,$saveas];
+	push @mirrors,@{$OPT->{mirror}} if($OPT->{mirror});
+
+	my $idx = 0;
+	foreach my $up(@mirrors) {
+		if(ref $up) {
+			$self->{urls} = [$up->[0]];
+			$OPT->{saveas} = $up->[1] || "";
+		}
+		else {
+			$self->{urls} = [$up];
+			$OPT->{saveas} = "";
+		}
+		app_message "Try mirror [$idx]: " . $self->{urls}[0] . " ...\n" if($idx);
+		$exitval = $self->_download($OPT);
+		last if($exitval == 0); #OK
+		last if($exitval == 12); #File exists
+		last if($exitval == 2); #Killed
+		$idx++;
+	}
+	foreach my $key (qw/url saveas mirror/) {
+		delete $self->{options}->{$key};
+		delete $OPT->{$key};
+	}	
+	$self->{urls} = [];
+	return $exitval;
+
+}
 #my $OptFlag='m:lvu:s:dn:r:b:ap:f';
 #my %OPT;
 #getopts($OptFlag,\%OPT);
+
+
+sub _get_url {
+	my $self = shift;
+	my $options = shift;
+	my $url = shift;
+	my $saveas = shift;
+
+		if(ref $_) {
+			$url = $_->[0];
+			$saveas = $_->[1] if($_->[1]);
+		}
+		if ($url !~ m/^\w+:\/\// ) {
+		    app_error("Invaild URL:\"",$url,"\"\n");
+			return 11,$url,$saveas;
+		}
+		if($url =~ m/^([^\t]+)(?:\t+|    )(.+)$/) {
+			$url = $1;
+			$saveas = $2 if($2);
+		}
+		
+		if($options->{createdir} && !$saveas) {
+		    my $filename=$url;
+		    $filename =~ s/^\w+:\/+[^\/]*\/+//;
+		    $filename =~ s/^[^\?]*\?[^\/]*\/+//g;
+		    $saveas=$filename;
+		}
+		if(!$saveas) {
+		    my $basename=$url;
+		    $basename =~ s/^.*\///g;
+		    $basename = "index.html" unless($basename);
+		    $saveas=$basename;
+		}
+		if($saveas =~ m/\/$/) {
+		    $saveas .= "index.html";
+		}
+		if($saveas and $options->{autoame} and -f $saveas) {
+		    $saveas = get_uniqname($saveas);
+		}
+		
+		if ((!$options->{force}) and -f "$saveas" ) {
+		    return 12,$url,$saveas;
+		}
+		return 0,$url,$saveas;
+}
+
 sub _download {
 	my $self = shift;
 	my $options = shift;
@@ -250,48 +380,8 @@ sub _download {
 		next unless($_);
 		my $url = $_;
 		my $saveas = $options->{saveas};
-		#$options->{saveas} = undef;
-		if(ref $_) {
-			$url = $_->[0];
-			$saveas = $_->[1] if($_->[1]);
-		}
-		if ($url !~ m/^\w+:\/\// ) {
-		    app_error("Invaild URL:\"",$url,"\"\n");
-			$exitval = 12;
-			next;
-		}
-#		elsif($url =~ m/^http:\/\/(?:oldvideo\.qiniudn\.com)/) {
-#			app_error("URL blocked:$url\n");
-#			$exitval = 12;
-#			next;
-#		}
-
-		if($url =~ m/^([^\t]+)(?:\t+|    )(.+)$/) {
-			$url = $1;
-			$saveas = $2 if($2);
-		}
-		
-		my $eurl = URI->new($url);
+		($exitval,$url,$saveas) = $self->_get_url($options,$url,$saveas);
 		my $refer=$options->{refurl} || $url;
-		if($options->{createdir} && !$saveas) {
-		    my $filename=$url;
-		    $filename =~ s/^\w+:\/+[^\/]*\/+//;
-		    $filename =~ s/^[^\?]*\?[^\/]*\/+//g;
-		    $saveas=$filename;
-		}
-		if(!$saveas) {
-		    my $basename=$url;
-		    $basename =~ s/^.*\///g;
-		    $basename = "index.html" unless($basename);
-		    $saveas=$basename;
-		}
-		if($saveas =~ m/\/$/) {
-		    $saveas .= "index.html";
-		}
-		if($saveas and $options->{autoame} and -f $saveas) {
-		    $saveas = get_uniqname($saveas);
-		}
-		
 		my $name= $options->{"name"} || "";
 		$idx++;
 		$name = "${name}[$idx/$count]" if($count>1);
@@ -307,12 +397,18 @@ sub _download {
 		    $message = "\n\t$saveas\n$name$url\n";
 		}
 		print STDERR $message unless($options->{quiet});
-		
-		if ((!$options->{force}) and -f "$saveas" ) {
-		    app_warning "$saveas exists\t[Canceled]\n";
-			$exitval = 12;
-			next;
+		if($exitval) {
+			if($exitval == 12) {
+				print STDERR "Ignored, File exists: $saveas\n";
+				next;
+			}
+			else {
+				print STDERR "Failed, Invalid URL:$url\n";
+				next;
+			}
 		}
+		my $eurl = URI->new($url);
+
 		
 		if($cookie) {
 		    if(!-f $cookie) {
@@ -340,7 +436,7 @@ sub _download {
 		);
 		my $maxtry = $options->{maxtry};
 		if(!$maxtry) {
-			if($url =~ m/(?:weipai\.cn|oldvideo\.qiniudn\.com)/) {
+			if($url =~ m/(?:weipai\.cn|oldvideo\.qiniudn\.com|vlook\.cn)/) {
 				$maxtry = 4; #10
 			}
 			else {

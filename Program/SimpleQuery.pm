@@ -32,6 +32,8 @@ my @OPTIONS = qw/
 		thread|t:i
 		file|f=s
 		retry
+		no-recursive|nr
+		no-createdir|nc
 /;
 
 sub new {
@@ -97,6 +99,60 @@ sub check_trash {
 	}
 	return 1;
 }
+sub get_request {
+	my $self = shift;
+	my $OPTS = $self->{options};
+	my @target = @_;
+	my $count = 0;
+	my @request;
+	my %r;
+	foreach(@target) {
+		my @rows = @$_;
+		my $dbname = shift(@rows);
+		next unless($dbname);
+		foreach my $item(@rows) {
+			next unless($item && @{$item});
+			my $title = $OPTS->{createdir} ? $item->[1] . "/$dbname/" : "";
+			next unless(check_trash($title));
+			push @request,{
+				count=>1,
+				level=>$item->[3],
+				url=>$item->[2],
+				title=>$title,
+			};
+			push @{$r{directory}},$title if($title);
+			$count++;
+		}
+	}
+	return $count,\%r,@request;
+}
+
+sub do_action {
+	my $self = shift;
+	my $action = shift;
+	my @target = @_;
+	my $OPTS = $self->{options};
+	use MyPlace::URLRule::OO;
+	my ($count,$r,@request) = $self->get_request(@target);
+	my $idx = 0;
+	my $URLRULE = new MyPlace::URLRule::OO(
+			'action'=>$action,
+			'thread'=>$OPTS->{thread},
+			'createdir'=>$OPTS->{createdir},
+	);
+	foreach(@request) {
+		$idx++;
+		$_->{progress} = "[$idx/$count]";
+		$URLRULE->autoApply($_);
+		$URLRULE->reset();
+	}
+	if($URLRULE->{DATAS_COUNT}) {
+		return $EXIT_CODE{OK},$r;
+	}
+	else {
+		return $EXIT_CODE{DO_NOTHING},$r;
+	}
+}
 
 
 sub do_downloader {
@@ -108,31 +164,39 @@ sub do_downloader {
 
 	my %r;
 	
-	$self->do_update('DATABASE',@target);
+	$self->do_action('DATABASE',@target);
 
 	use MyPlace::Program::Downloader;
 	my $DL = new MyPlace::Program::Downloader;
-	my @DLOPT = qw/--quiet --input urls.lst --recursive/;
-	push @DLOPT,"--retry" if($OPTS->{retry});
-
-	foreach(@target) {
-		my @rows = @$_;
-		my $dbname = shift(@rows);
-		next unless($dbname);
-		foreach my $item(@rows) {
-			next unless($item && @{$item});
-			my $title = $item->[1] . "/$dbname";# . $item->[0];
-			next unless(check_trash($title));
-			push @request,$title;
-			push @{$r{directory}},$title;
-			$count++;
+	my @DLOPT = qw/--quiet --input urls.lst/;
+	push @DLOPT,"--recursive" if($OPTS->{recursive});
+	push @DLOPT,"--retry" unless($OPTS->{'no-retry'});
+	
+	if($OPTS->{createdir}) {
+		foreach(@target) {
+			my @rows = @$_;
+			my $dbname = shift(@rows);
+			next unless($dbname);
+			foreach my $item(@rows) {
+				next unless($item && @{$item});
+				my $title = $item->[1] . "/$dbname";# . $item->[0];
+				next unless(check_trash($title));
+				push @request,$title;
+				push @{$r{directory}},$title;
+				$count++;
+			}
 		}
+	}
+	else {
+		@request = ("");
 	}
 	my $idx = 0;
 	my $dlcount = 0;
 	foreach(@request) {
 		$idx++;
-		my ($done,$error,$msg) = $DL->execute(@DLOPT,'--directory',$_,);
+		my @PROGOPT = @DLOPT;
+		push @PROGOPT,"--directory",$_ if($_);
+		my ($done,$error,$msg) = $DL->execute(@PROGOPT);
 		if($done) {
 			$dlcount += $done;
 		}
@@ -151,91 +215,16 @@ sub do_downloader {
 sub do_update {
 	my $self = shift;
 	my $cmd = shift(@_) || "UPDATE";
-	my @target = @_;
-	my $OPTS = $self->{options};
-	use MyPlace::URLRule::OO;
-	my @request;
-	my $count = 0;
-
-	my %r;
-
-	foreach(@target) {
-		my @rows = @$_;
-		my $dbname = shift(@rows);
-		next unless($dbname);
-		foreach my $item(@rows) {
-			next unless($item && @{$item});
-			my $title = $item->[1] . "/$dbname/";
-			next unless(check_trash($title));
-			push @request,{
-				count=>1,
-				level=>$item->[3],
-				url=>$item->[2],
-				title=>$title,
-			};
-			push @{$r{directory}},$item->[1] . "/$dbname";
-			$count++;
-		}
-	}
-	my $idx = 0;
-	my $URLRULE = new MyPlace::URLRule::OO('action'=>$cmd,'thread'=>$OPTS->{thread});
-	foreach(@request) {
-		$idx++;
-		$_->{progress} = "[$idx/$count]";
-		$URLRULE->autoApply($_);
-		$URLRULE->reset();
-	}
-	if($URLRULE->{DATAS_COUNT}) {
-		return $EXIT_CODE{OK},\%r;
-	}
-	else {
-		return $EXIT_CODE{DO_NOTHING},\%r;
-	}
+	unshift @_,$cmd;
+	goto &do_action;
 }
+
 
 sub do_file {
 	my $self = shift;
 	my $output = shift;
-	my @target = @_;
-	my $OPTS = $self->{options};
-	use MyPlace::URLRule::OO;
-	my @request;
-	my $count = 0;
-
-	my %r;
-
-	foreach(@target) {
-		my @rows = @$_;
-		my $dbname = shift(@rows);
-		next unless($dbname);
-		foreach my $item(@rows) {
-			next unless($item && @{$item});
-			my $title = $item->[1] . "/$dbname/";
-			next unless(check_trash($title));
-			push @request,{
-				count=>1,
-				level=>$item->[3],
-				url=>$item->[2],
-				title=>$title,
-			};
-			push @{$r{directory}},$item->[1] . "/$dbname";
-			$count++;
-		}
-	}
-	my $idx = 0;
-	my $URLRULE = new MyPlace::URLRule::OO('action'=>"DATABASE:$output",'thread'=>$OPTS->{thread});
-	foreach(@request) {
-		$idx++;
-		$_->{progress} = "[$idx/$count]";
-		$URLRULE->autoApply($_);
-		$URLRULE->reset();
-	}
-	if($URLRULE->{DATAS_COUNT}) {
-		return $EXIT_CODE{OK},\%r;
-	}
-	else {
-		return $EXIT_CODE{DO_NOTHING},\%r;
-	}
+	unshift @_,"DATABASE:$output";
+	goto &do_action;
 }
 
 sub do_add {
@@ -325,15 +314,24 @@ sub do_saveurl {
 			return $EXIT_CODE{FAILED};
 		}
 		use MyPlace::URLRule::OO;
-		my $URLRULE = new MyPlace::URLRule::OO('action'=>'!SAVE','thread'=>$OPTS->{thread});
+		my $URLRULE = new MyPlace::URLRule::OO(
+				'action'=>'DOWNLOADER',
+				'thread'=>$OPTS->{thread},
+				'createdir'=>$OPTS->{createdir},
+		);
 		$URLRULE->autoApply({
 				count=>1,
 				level=>0,
 				url=>$OPTS->{saveurl},
-				title=>join("/",$name,$DATABASENAME,$id),
+				title=> $OPTS->{createdir} ? join("/",$name,$DATABASENAME,$id) : '',
 		});
 		if($URLRULE->{DATAS_COUNT}) {
-			return $EXIT_CODE{OK},{'directory'=>["$name/$DATABASENAME"]};
+			if($OPTS->{createdir}) {
+				return $EXIT_CODE{OK},{'directory'=>["$name/$DATABASENAME"]};
+			}
+			else {
+				return $EXIT_CODE{OK};
+			}
 		}
 		else {
 			return $EXIT_CODE{DO_NOTHING};
@@ -625,6 +623,9 @@ sub execute {
 	elsif($OPT->{manual}) {
 		pod2usage('--exitval'=>1,'-verbose'=>2);
 		return $EXIT_CODE{OK};
+	}
+	foreach my $defkey(qw/createdir recursive/) {
+		$OPT->{$defkey} = $OPT->{"no-$defkey"} ? 0 : 1;
 	}
 	$self->{NAMES} = @argv ? \@argv : undef;
 	$self->{COMMAND} = 	$OPT->{additem} ? 'ADDITEM' : $OPT->{add} ? 'ADD' : $OPT->{list} ? 'LIST' : $OPT->{update} ? 'UPDATE' : $OPT->{file} ? 'FILE' : $OPT->{command} ? uc($OPT->{command}) : 'UPDATE';

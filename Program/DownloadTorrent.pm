@@ -43,6 +43,10 @@ our @SITES = (
 	}
 );
 
+sub error_no {
+	return MyPlace::Program::EXIT_CODE(@_);
+}
+
 sub checktype {
 	my $output = shift;
 	return unless(-f $output);
@@ -101,7 +105,7 @@ sub download_torrent {
 	}
 	else {
 		app_error "No HASH information found in $URI\n";
-		return 1;
+		return error_no("ERROR");
 	}
 	
 	my $output = "";
@@ -147,7 +151,7 @@ sub download_torrent {
 	$output .= ".torrent";
 	if(checktype($output)) {
 		app_warning "Error, File already downloaded, Ignored\n";
-		return 0;
+		return error_no("IGNORED");
 	}
 	foreach my $site (@SITES) {
 		my $sitename = $site;
@@ -161,14 +165,14 @@ sub download_torrent {
 		if(download($output,$url)) {
 			color_print('GREEN',"  [OK]\n");
 			color_print('GREEN', "[OK]\n\n");
-			return 0;
+			return error_no("OK");
 		}
 		else {
 			color_print('RED',"  [FAILED]\n");
 		}
 	}
 	color_print('RED',"[Failed]\n\n");
-	return 1;
+	return error_no("FAILED");
 }
 
 sub USAGE {
@@ -206,7 +210,7 @@ sub MAIN {
 		}
 	}
 	else {
-		download_torrent(@argv);
+		return download_torrent(@argv);
 	}
 }
 

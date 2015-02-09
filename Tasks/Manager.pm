@@ -1,5 +1,6 @@
 #!/usr/bin/perl -w
 package MyPlace::Tasks::Manager;
+use MyPlace::Program qw/EXIT_CODE/;
 use strict;
 use warnings;
 
@@ -220,8 +221,7 @@ sub run {
 		}
 	}
 	elsif(!@input) {
-		$self->exit($CWD_KEPT,0);
-		return 0;
+		return $self->exit($CWD_KEPT,$COUNTER);
 	}
 	else {
 		@queue = @input;
@@ -230,8 +230,7 @@ sub run {
 
 	if(!$count) {
 		&p_warn("Tasks queue was empty\n") unless($opt{quiet});
-		$self->exit($CWD_KEPT,2);
-		return 2;
+		return $self->exit($CWD_KEPT,$COUNTER,2,"Empty tasks queue");
 	}
 	elsif($count > 1) {
 		&p_msg("Get $count tasks in queue\n");
@@ -244,7 +243,35 @@ sub run {
 
 	my $IAMKILLED = undef;
 	
+	my $SUBEXIT = sub {
+		if(!$opt{simple}) {
+			print STDERR "\n";
+			if(!-d $CONFIG_DIR) {
+				if(!mkdir($CONFIG_DIR)) {
+					&p_warn("Error creating directory $CONFIG_DIR: $!\n");
+				}
+			}
+			&_write_lines(\@done,$DB_DONE,$CONFIG_DIR);
+			&_write_lines(\@queue,$DB_QUEUE,$CONFIG_DIR);
+			if($opt{'ignore-failed'}) {
+				&_write_lines([@ignore,@failed],$DB_FAILED,$CONFIG_DIR);
+			}
+			else {
+				&_write_lines(\@failed,$DB_FAILED,$CONFIG_DIR);
+			}
+		}
+		return $self->exit(
+			$CWD_KEPT,
+			$COUNTER,
+			($IAMKILLED ? 
+				($self->EXIT_CODE('KILLED'),"KILLED") : 
+				($self->EXIT_CODE("OK"),"OK")
+			)
+		);
+	};	
+	my $SIGINT = $SIG{INT};
 	$SIG{INT} = sub {
+		delete $SIG{INT};
 		return 2 if($IAMKILLED);
 		$IAMKILLED = 1;
 		print STDERR "MyPlace::Tasks::Manager KILLED\n";
@@ -263,7 +290,11 @@ sub run {
 		}
 		else {
 			$r = system($worker,$task,@wopts);
+			if($r != 0 and $r != 2) {
+				$r = $r>>8;
+			}
 		}
+#		print STDERR ("EXIT_CODE[$r]\n");
 		last if($IAMKILLED);
 		sleep 1;
 		last if($IAMKILLED);
@@ -274,41 +305,31 @@ sub run {
 			push @done,$task;
 		}
 		elsif($r == 2) {
+			$IAMKILLED = 1;
 			print STDERR ("I AM KILLED\n");
 			last;
 		}
-		else {
-			$r = $r>>8;
-			if($r == 12) {
+		elsif($r == $self->EXIT_CODE('IGNORED')) {
 			#	&p_msg("[$index/$count] IGNORED\n");
 				shift @queue;
 				push @done,$task;
-			}
-			else {
-				shift @queue;
-				#&p_msg("[$index/$count] FAILED\n");
-				push @failed,$task;
-			}
+		}
+		else {
+			shift @queue;
+			#&p_msg("[$index/$count] FAILED\n");
+			push @failed,$task;
+		}
+		unless($opt{quiet} or $opt{simple}) {
+			p_msg "QUEUE:" . scalar(@queue) .
+				  ", DONE :" . scalar(@done) . 
+				  ", IGNORED: " . scalar(@ignore) . 
+				  ", FAILED: " . scalar(@failed) .
+			"\n";
 		}
 		last if($IAMKILLED);
 	}
-	if(!$opt{simple}) {
-		print STDERR "\n";
-		if(!-d $CONFIG_DIR) {
-			if(!mkdir($CONFIG_DIR)) {
-				&p_warn("Error creating directory $CONFIG_DIR: $!\n");
-			}
-		}
-		&_write_lines(\@done,$DB_DONE,$CONFIG_DIR);
-		&_write_lines(\@queue,$DB_QUEUE,$CONFIG_DIR);
-		if($opt{'ignore-failed'}) {
-			&_write_lines([@ignore,@failed],$DB_FAILED,$CONFIG_DIR);
-		}
-		else {
-			&_write_lines(\@failed,$DB_FAILED,$CONFIG_DIR);
-		}
-	}
-	return $self->exit($CWD_KEPT,$COUNTER,0,"OK");
+	$SIG{INT} = $SIGINT;
+	return &$SUBEXIT();
 }
 
 sub exit {
@@ -321,9 +342,7 @@ sub exit {
 			return undef,4,"$!";
 		}
 	}
-	else {
-		return @_;
-	}
+	return @_;
 }
 
 1;

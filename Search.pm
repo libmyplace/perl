@@ -16,17 +16,18 @@ my $HTTP;
 
 sub build_keyword {
     my $keyword = shift;
-	return $keyword;
-    my $no_or = shift;
+#	return $keyword;
+    my $or = shift;
     my @keywords;
     while($keyword =~ m/(["'])([^\1]+)\1|([^\s]+)/g)
     {
         my $word = $2 ? $2 : $3;
+		#print STDERR "Word:$word\n";
         next unless($word);
         $word =~ s/\s+/+/g;
         push @keywords,$word;
     }
-    return $no_or ? join("+",@keywords) : join("+OR+",@keywords);
+    return (!$or) ? join("+",@keywords) : join("+OR+",@keywords);
 }
 
 sub build_url {
@@ -40,7 +41,7 @@ sub build_url {
 }
 sub get_url {
     my ($URL,$referer,$decoder,$verbose) = @_;
-    print STDERR "Retriving $URL..." if($verbose);
+    print STDERR "Retriving $URL...\n" if($verbose);
     if(!$HTTP) {
         $HTTP = MyPlace::Curl->new();
     }

@@ -12,12 +12,13 @@ sub new {
 		push @{$self->{OUTPUT}},@_;
 	}
 	$self->{database} = "TEXT INPUT";
+	$self->{options} = {};
 	return $self;
 }
 
 sub set_options {
 	my $self = shift;
-	$self->{options}->{$_} = 1 foreach(@_);
+	$self->{options} = {%{$self->{options}},@_};#->{$_} = 1 foreach(@_);
 	return $self;
 }
 
@@ -134,9 +135,8 @@ sub _add {
 		elsif(defined $info{$id}) {
 			if($self->{options}->{overwrite}) {
 				$count++;
+				print STDERR "$id: $info{$id} => $incoming{$id}\n";
 				$info{$id} = $incoming{$id};
-				push @sorted,$id;
-				print STDERR "Add $id => $incoming{$id}\n";
 			}
 			else {
 				print STDERR "\tKey <$id> already defined as : " . ($info{$id} || "[EMPTY]") . "\n";

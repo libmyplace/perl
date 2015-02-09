@@ -215,6 +215,15 @@ sub queue {
 }
 
 sub abort {
+	my $self = shift;
+	my $task = $self->{last_task};
+	$self->{last_task} = undef;
+	if($task) {
+		$task->{status} = $TASK_STATUS->{'IGNORE'};
+		unshift @{$self->{tasks}},$task;
+	}
+	$self->save();
+	return 0;
 }
 
 sub finish {
@@ -237,6 +246,12 @@ sub finish {
 	}
 	elsif($status == $TASK_STATUS->{'DONOTHING'}) {
 		push @{$self->{tasks_donothing}},$task;
+	}
+	
+	if($task->tasks) {
+		foreach($task->tasks) {
+			$self->queue(@$_);
+		}
 	}
 	$self->{last_task} = undef;
 	$self->save();

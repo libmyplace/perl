@@ -18,6 +18,7 @@ our $STATUS = {
 	'ERROR'=>3,
 	'IGNORED'=>4,
 	'DONOTHING'=>20,
+	'FATALERROR'=>30,
 };
 
 our $TASK_STATUS = $STATUS;
@@ -83,6 +84,22 @@ sub load {
 	my $text = CORE::shift(@_) || 'myplace-tasks';
 	($self->{namespace},@{$self->{definition}}) = split(/\s*(?:[\>\t]|\\t)\s*/,$text);
 	return $self;
+}
+
+sub queue {
+	my $self = CORE::shift;
+	my $newtask = shift;
+	my $ontop = shift;
+	if(!$self->{NEWTASKS}) {
+		$self->{NEWTASKS} = [];
+	}
+	push @{$self->{NEWTASKS}},[$newtask,$ontop];
+	return $self->{NEWTASKS};
+}
+
+sub tasks {
+	my $self = shift;
+	return @{$self->{NEWTASKS}} if($self->{NEWTASKS});
 }
 
 1;

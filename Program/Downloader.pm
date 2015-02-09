@@ -52,7 +52,9 @@ sub save_weipai {
 	my $self = shift;
 	my $url = shift;
 	my $filename = shift;
-	return system('download_weipai_video',$url,$filename,@_);
+	my $r = system('download_weipai_video',$url,$filename,@_);
+	$r = $r>>8 if(($r != 0) and $r != 2);
+	return $r;
 }
 
 sub save_http {
@@ -62,7 +64,9 @@ sub save_http {
 	my @opts = @_;
 	push @opts,'--url',$url;
 	push @opts,'--saveas',$filename if($filename);
-	return system('download',@opts);
+	my $r = system('download',@opts);
+	$r = $r>>8 if(($r != 0) and $r != 2);
+	return $r;
 }
 
 
@@ -251,6 +255,7 @@ sub save_torrent {
 	else {
 		$r = MyPlace::Program::DownloadTorrent::download_torrent($hash);
 	}
+	return $r;
 	if($r == 0) {
 		return $self->EXIT_CODE("OK");
 	}

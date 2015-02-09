@@ -8,7 +8,7 @@ BEGIN {
     $VERSION        = 1.00;
     @ISA            = qw(Exporter);
 	#@EXPORT		    = qw(profile user videos home square get_likes fans follows video);
-    @EXPORT_OK      = qw(profile user videos home square get_likes fans follows video get_url);
+    @EXPORT_OK      = qw(build_url profile user videos home square get_likes fans follows video get_url);
 }
 
 our $HOST = 'http://w1.weipai.cn';
@@ -65,8 +65,19 @@ sub get_url {
 		return $data;
 	}
 }
+sub get_html_url {
+	my $url = shift;
+	print STDERR "Retriving $url ...\n";
+	my($exitval,$data) = $CURL->get($url,@_);
+	if($exitval) {
+		return undef;
+	}
+	else {
+		return $data;
+	}
+}
 
-sub _build_url {
+sub build_url {
 	my $tpl = shift;
 	my $count = 0;
 	my $url = $HOST . $URLSTPL{$tpl};
@@ -107,7 +118,7 @@ sub _encode {
 }
 
 sub get_json {
-	return decode_json(get_url(_build_url(@_)));
+	return decode_json(get_url(build_url(@_)));
 }
 sub get_data {
 	my $what = shift;
@@ -115,7 +126,7 @@ sub get_data {
 	my $url;
 	my $data;
 	if($cmd eq 'videoinfo') {
-		my $video = decode_json(get_url(_build_url('video',@_)));
+		my $video = decode_json(get_url(build_url('video',@_)));
 		$video = $video->{video_list}->[0] if($video->{video_list});
 		delete $video->{defender_list};
 		delete $video->{top_reply_list};
@@ -123,11 +134,11 @@ sub get_data {
 	}
 	elsif($cmd eq 'poster') {
 		my $videoid = shift;
-		my $video = decode_json(get_url(_build_url('video',$videoid)));
+		my $video = decode_json(get_url(build_url('video',$videoid)));
 		if($video->{video_list}) {
 			my $uid = $video->{video_list}->[0]->{user_id};
 			print "USERID => $uid\n"; 
-			$data = decode_json(get_url(_build_url('user',$uid,@_)));
+			$data = decode_json(get_url(build_url('user',$uid,@_)));
 			$data->{profile} = get_json('profile',$uid);
 			delete $data->{defender_list};
 		}
@@ -136,7 +147,7 @@ sub get_data {
 		}
 	}
 	else {
-		$url = _build_url($cmd,@_);
+		$url = build_url($cmd,@_);
 		$data = decode_json(get_url($url));
 	}
 	return _encode($data);
@@ -146,6 +157,41 @@ sub get_data {
 sub get_user {
 	my $uid = shift;
 	return get_data('user',$uid,1);
+}
+
+sub get_user_from_page {
+	my $url = shift;
+	my %user;
+	$url =~ s/weipai\.cn\/(?:videos|user)\//weipai.cn\/follows\//;
+	my $data = get_html_url($url);
+	my @text = split("\n",$data);
+	foreach(@text) {
+		chomp;
+		if(!$user{username}) {
+			if(m/class="name"[^>]*title="([^"]+)"/) {
+				$user{username} = $1;
+			}
+			elsif(m/"nickname"\s*[:=]\s*"([^"]+)/) {
+				$user{username} = $1;
+				$user{username} =~ s/\\u(\w{4,4})/chr(hex($1))/eg;
+			}
+		}
+		if(!$user{uid}) {
+			if(m/href="\/user\/([^\/"]+)/) {
+				$user{uid} = $1;
+			}
+			elsif(m/"user_id"\s*[:=]\s*"([^"]+)/) {
+				$user{uid} = $1;
+			}
+		}
+		last if($user{uid} and $user{usernmae});
+	}
+	if($user{uid}) {
+		return \%user;
+	}
+	else {
+		return undef;
+	}
 }
 
 sub get_videos {
@@ -195,7 +241,7 @@ sub get_video {
 sub get_user_videos {
 	my $uid = shift;
 	my $cursor = shift;
-#	my $url = _build_url('user',$uid,undef,$cursor);
+#	my $url = build_url('user',$uid,undef,$cursor);
 	my %r;
 	my $info = get_videos($uid,undef,$cursor);
 	$r{uid} = $uid;
@@ -250,6 +296,34 @@ sub OPTIONS {
 	manual
 	dump|d
 	/;
+}
+
+sub clean_up_data {
+	my $data = shift;
+	my $type = ref $data;
+	if(!$type) {
+		return $data;
+	}
+	elsif($type eq 'ARRAY') {
+		foreach my $item(@$data) {
+			next unless(ref $item);
+			clean_up_data($item,@_);
+		}
+	}
+	elsif($type eq 'HASH') {
+		foreach my $kw (qw/
+				top_reply_list defender_list
+				is_vip is_delete s_receive
+				like_state video_play_num
+				video_play_num video_like_num
+		/,@_) {
+			delete $data->{$kw};
+		}
+		foreach my $item(keys %$data) {
+			clean_up_data($data->{$item},@_);
+		}
+	}
+	return $data;
 }
 
 sub cmd_get_videos {
@@ -389,6 +463,29 @@ sub MAIN {
 			$id =~ s/^.*\///;
 			$id =~ s/[\/\._].*$//;
 			my $r = get_data(lc($what),$id,@_);
+			print Data::Dumper->Dump([$r],[$what]),"\n";
+			return 0;
+		}
+		else {
+			print STDERR "Usage: $0 dump <user|video|fans|...> ...\n";
+			return 1;
+		}
+	}
+	elsif($command eq 'PRINT') {
+		my $what = shift;
+		if($what) {
+			my $id = shift;
+			$id =~ s/^.*\///;
+			$id =~ s/[\/\._].*$//;
+			my $r = get_data(lc($what),$id,@_);
+			my @filters = ();
+			my $query = lc($what);
+			if($query eq 'likes') {
+				push @filters,qw/
+					user_avatar video_reply_num video_screenshots_v
+				/;
+			}
+			clean_up_data($r,@filters);
 			print Data::Dumper->Dump([$r],[$what]),"\n";
 			return 0;
 		}

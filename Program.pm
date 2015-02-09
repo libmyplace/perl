@@ -19,10 +19,15 @@ our %EXIT_CODE = (
 	FAILED=>11,
 	IGNORED=>12,
 	UNKNOWN=>19,
+	USAGE=>3,
 );
 
 sub EXIT_CODE {
-	return $_[0] ? ($EXIT_CODE{$_[0]} || $_[0]) : $EXIT_CODE{UNKNOWN};
+	my $code = shift;
+	if(ref $code) {
+		$code = shift;
+	}
+	return $code ? defined $EXIT_CODE{$code} ? $EXIT_CODE{$code} : $code : $EXIT_CODE{UNKNOWN};
 }
 
 my $DEF_OPTIONS = [qw/
@@ -90,7 +95,7 @@ sub execute {
 	my $self = shift;
 	my $OPT;
 	if(@_) {
-		$OPT= {};
+		$OPT = {ORIGINAL_ARGV=>[@_]};
 		GetOptionsFromArray(\@_,$OPT,@{$self->{DEF_OPTIONS}});
 		$OPT = cathash($self->{options},$OPT);
 	}
