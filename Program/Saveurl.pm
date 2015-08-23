@@ -41,6 +41,8 @@ sub parse_options {
 	no|n=s
 	thread|t=i
 	output|o=s
+	include|I=s
+	exclude|X=s
 	/;
 	my %OPTS;
 	Getopt::Long::Configure('no_ignore_case');
@@ -383,6 +385,20 @@ sub doTasks {
 				"<<$_\r";
 			print $FH_OUT $_;
 			next;
+		}
+		if($self->{OPTS}->{include}) {
+			if(m/$self->{OPTS}->{include}/) {
+			}
+			else {
+				print STDERR "[NOT Included] Skipped $_\n";
+				next;
+			}
+		}
+		if($self->{OPTS}->{exclude}) {
+			if(m/$self->{OPTS}->{exclude}/) {
+				print STDERR "[Excluded] Skipped $_\n";
+				next;
+			}
 		}
 		s/[\r\n]+/ /g;
 		if(m/^qvod:(.+)\t(.+)$/) {

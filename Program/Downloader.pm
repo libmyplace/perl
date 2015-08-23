@@ -19,6 +19,15 @@ sub OPTIONS {qw/
 	referer=s
 	overwrite|o
 	force|f
+	exclude|X=s
+	include|I=s
+	url=s
+	touch
+	images|img
+	videos|vid
+	markdone
+	no-queue|nq
+	no-download
 /;}
 use MyPlace::Tasks::Manager;
 my %EXPS = (
@@ -52,9 +61,52 @@ sub save_weipai {
 	my $self = shift;
 	my $url = shift;
 	my $filename = shift;
-	my $r = system('download_weipai_video',$url,$filename,@_);
+	my @prog = ('download_weipai_video');
+	if($self->{OPTS}->{'no-download'}) {
+		push @prog,"--no-download";
+	}
+	push @prog,('--mtm',@_,'--',$url);
+	push @prog,$filename if($filename);
+	my $r = system(@prog);
 	$r = $r>>8 if(($r != 0) and $r != 2);
 	return $r;
+}
+
+sub save_http_post {
+	my $self = shift;
+	my $url = shift;
+	my $data = shift;
+	my $filename = shift;
+	my @opts = @_;
+	if($url =~ m/^([^\t]+)\t(.+)$/) {
+		$url = $1;
+		$filename = $filename || $2;
+	}
+	if($url !~ m/^(?:http|https|ftp):\/\//) {
+		$url = 'http://' . $url;
+	}
+	if($url =~ m/^([^\?]+)\?(.+)$/) {
+		$url = $1;
+		push @opts, '--post', $2;
+	}
+	return $self->save_http($url,$filename || '',@opts);
+}
+
+sub file_exists {
+	my $self = shift;
+	my $url = shift;
+	my $filename = shift;
+	return unless($filename);
+	return if($self->{OPTS}->{force});
+	return if($self->{OPTS}->{overwrite});
+	if(-f $filename) {
+		$self->print_warn("Ignored <$url>\n  File exists: $filename\n");
+		$self->{LAST_EXIT} = $self->EXIT_CODE("OK");
+		return 1;
+	}
+	else {
+		return undef;
+	}
 }
 
 sub save_http {
@@ -63,22 +115,15 @@ sub save_http {
 	my $filename = shift;
 	my @opts = @_;
 	push @opts,'--url',$url;
-	push @opts,'--saveas',$filename if($filename);
+	if($filename) {
+		return $self->{LAST_EXIT} if($self->file_exists($url,$filename));
+		push @opts,'--saveas',$filename if($filename);
+	}
 	my $r = system('download',@opts);
 	$r = $r>>8 if(($r != 0) and $r != 2);
 	return $r;
 }
 
-
-sub file_exists {
-	my $self = shift;
-	my $filename = shift;
-	my $OPTS = $self->{OPTS};
-	return if($OPTS->{overwrite});
-	return if($OPTS->{force});
-	return 1 if(-f $filename);
-	return;
-}
 
 sub file_open {
 	my $self = shift;
@@ -95,9 +140,8 @@ sub save_file {
 	my $self = shift;
 	my ($link,$filename) = @_;
 	$filename = normalize($filename);
-	if($self->file_exists($filename)) {
-		$self->print_warn("Ignored, file exists: $filename\n");
-		return $self->EXIT_CODE('IGNORE');
+	if($self->file_exists($link,$filename)) {
+		return $self->{LAST_EXIT};
 	}
 	$self->print_msg("Write file: $filename\n");
 	my $r = system('mv','--',$link,$filename);
@@ -143,9 +187,8 @@ sub save_bdhd {
 	$filename =~ s/\.bdhd$//;
 	if($link && $filename) {
 		$filename = $filename . ".bsed";
-		if($self->file_exists($filename)) {
-			$self->print_warn("Ignored, file exists: $filename\n");
-			return $self->EXIT_CODE('IGNORE');
+		if($self->file_exists($link,$filename)) {
+			return $self->{LAST_EXIT};
 		}
 		$self->print_msg("Write file:$filename\n");
 		my $FH = $self->file_open($filename,">:utf8");
@@ -200,10 +243,7 @@ sub save_qvod {
 	}
 	$filename =~ s/\.qvod$//;
 	if($link && $filename) {
-		if($self->file_exists($filename)) {
-			$self->print_warn("Ignored, file exists: $filename\n");
-			return $self->EXIT_CODE('IGNORE');
-		}
+		return $self->{LAST_EXIT} if($self->file_exists($link,$filename));
 		$self->print_msg("Write file:$filename\n");
 		my $FH = $self->file_open($filename,">:utf8");
 		if(!$FH) {
@@ -228,10 +268,7 @@ sub save_data {
 	my $filename = shift;
 	return unless($filename);
 	$data =~ s/\0/\n/g;
-		if($self->file_exists($filename)) {
-			$self->print_warn("Ignored, file exists: $filename\n");
-			return $self->EXIT_CODE('IGNORE');
-		}
+	return $self->{LAST_EXIT} if($self->file_exists('<DATA>',$filename));
 		$self->print_msg("Write file:$filename\n");
 		my $FH = $self->file_open($filename,">:raw");
 		if(!$FH) {
@@ -267,69 +304,132 @@ sub save_torrent {
 	}
 }
 
+sub download {
+	my $self = shift;
+	my $line = shift;
+	my @opts = @_;
+	$_ = $line;
+	my $filename = $_;
+	if(!$_) {
+		return $self->EXIT_CODE('IGNORED');
+	}
+	elsif(m/^.+\s*\t\s*(.+)$/) {
+		$filename = $1;
+	}
+	$filename =~ s/.*[\/\\]+//;
+	if($self->{OPTS}->{touch}) {
+		$self->print_msg("[Touch] $filename\n");
+		system("touch","--",$filename);
+		return $self->EXIT_CODE("DEBUG");
+	}
+	elsif($self->{OPTS}->{markdone}) {
+		if(-f $filename) {
+			$self->print_msg("[Mark done] $filename\n");
+			return $self->EXIT_CODE("IGNORED");
+		}
+		else {
+			$self->print_msg("[Not exists] $filename\n");
+			return $self->EXIT_CODE("UNKNOWN");
+		}
+	}
+	if(!$_) {
+		1;
+	}
+	elsif(m/^post:\/\/(.+)$/) {
+		$self->save_http_post($1);
+	}
+	elsif(m/^qvod:(.+)\t(.+)$/) {
+		$self->save_qvod($1,$2);
+	}
+	elsif(m/^qvod:(.+)$/) {
+		$self->save_qvod($1);
+	}
+	elsif(m/^bdhd:(.+)\t(.+)$/) {
+		$self->save_bdhd($1,$2);
+	}
+	elsif(m/^bdhd:(.+)$/) {
+		$self->save_bdhd($1);
+	}
+	elsif(m/^(ed2k:\/\/.+)\t(.+)$/) {
+		$self->save_bhdh($1,$2);
+	}
+	elsif(m/^(ed2k:\/\/.+)$/) {
+		$self->save_bhdh($1);
+	}
+	elsif(m/^(http:\/\/[^\/]*(?:weipai\.cn|oldvideo\.qiniudn\.com)\/.*\.(?:jpg|mp4|flv|f4v|mov|ts))\t(.+)$/) {
+		$self->save_weipai($1,$2);
+	}
+	elsif(m/^(http:\/\/[^\/]*(?:weipai\.cn|oldvideo\.qiniudn\.com)\/.*\.(?:jpg|mp4|flv|f4v|mov|ts))$/) {
+		$self->save_weipai($_);
+	}
+	elsif(m/^(https?:\/\/.+)\t(.+)$/) {
+		$self->save_http($1,$2);
+	}
+	elsif(m/^(https?:\/\/.+)$/) {
+		$self->save_http($1);
+	}
+	elsif(m/^file:\/\/(.+)\t(.+)$/) {
+		$self->save_file($1,$2);
+	}
+	elsif(m/^file:\/\/(.+)$/) {
+		$self->save_file($1,"./");
+	}
+	elsif(m/^data:\/\/(.+)\t(.+)$/) {
+		$self->save_data($1,$2);
+	}
+	elsif(m/$EXPS{torrent}/) {
+		$self->save_torrent($1,$2);
+	}
+	elsif(m/$EXPS{magnet}\t(.+)$/) {
+		$self->save_torrent($1,$2);
+	}
+	elsif(m/$EXPS{magnet}/) {
+		$self->save_torrent($1);
+	}
+	else {
+		$self->print_err("Error: URL not supported [$_]\n");
+		$self->EXIT_CODE("ERROR");
+	}
+}
 
 sub MAIN {
 	my $self = shift;
 	my $OPTS = shift;
 	$self->{OPTS} = $OPTS;
+	if($OPTS->{directory}) {
+		system("ls","-ld","--",$OPTS->{directory});
+	}
+	elsif($OPTS->{url}) {
+	}
+	elsif(@_) {
+		foreach(@_) {
+			if(-e $_) {
+				system("ls","-ld","--",$_);
+			}
+		}	
+	}
+	if($self->{OPTS}->{url}) {
+		return $self->download($self->{OPTS}->{url});
+	}
+	my @include;
+	push @include,$OPTS->{include} if($OPTS->{include});
+	push @include,'\.(?:jpg|gif|png|jpeg)' if($OPTS->{images});
+	push @include,'\.(?:flv|mov|f4v|avi|mkv|mpg|mpeg|rmvb|asf|wmv|ts|mp4|3pg)' if($OPTS->{'videos'});
+	if(@include) {
+		$OPTS->{include} = join("|",@include);
+	}
+	my @exclude;
+	push @exclude,$OPTS->{exclude} if($OPTS->{exclude});
+	push @exclude,'\.(?:jpg|gif|png|jpeg)' if($OPTS->{'no-images'});
+	push @exclude,'\.(?:flv|mov|f4v|avi|mkv|mpg|mpeg|rmvb|asf|wmv|ts|mp4|3pg)' if($OPTS->{'no-videos'});
+	if(@exclude) {
+		$OPTS->{exclude} = join("|",@exclude);
+	}
+
 	my $mtm = MyPlace::Tasks::Manager->new(
 		directory=>$OPTS->{directory},
 		worker=>sub {
-			my $line = shift;
-			my @opts = @_;
-			$_ = $line;
-			if(m/^qvod:(.+)\t(.+)$/) {
-				$self->save_qvod($1,$2);
-			}
-			elsif(m/^qvod:(.+)$/) {
-				$self->save_qvod($1);
-			}
-			elsif(m/^bdhd:(.+)\t(.+)$/) {
-				$self->save_bdhd($1,$2);
-			}
-			elsif(m/^bdhd:(.+)$/) {
-				$self->save_bdhd($1);
-			}
-			elsif(m/^(ed2k:\/\/.+)\t(.+)$/) {
-				$self->save_bhdh($1,$2);
-			}
-			elsif(m/^(ed2k:\/\/.+)$/) {
-				$self->save_bhdh($1);
-			}
-			elsif(m/^(http:\/\/[^\/]*(?:weipai\.cn|oldvideo\.qiniudn\.com)\/.*\.(?:jpg|mp4|flv|f4v|mov|ts))\t(.+)$/) {
-				$self->save_weipai($1,$2);
-			}
-			elsif(m/^(http:\/\/[^\/]*(?:weipai\.cn|oldvideo\.qiniudn\.com)\/.*\.(?:jpg|mp4|flv|f4v|mov|ts))$/) {
-				$self->save_weipai($_);
-			}
-			elsif(m/^(https?:\/\/.+)\t(.+)$/) {
-				$self->save_http($1,$2);
-			}
-			elsif(m/^(https?:\/\/.+)$/) {
-				$self->save_http($1);
-			}
-			elsif(m/^file:\/\/(.+)\t(.+)$/) {
-				$self->save_file($1,$2);
-			}
-			elsif(m/^file:\/\/(.+)$/) {
-				$self->save_file($1,"./");
-			}
-			elsif(m/^data:\/\/(.+)\t(.+)$/) {
-				$self->save_data($1,$2);
-			}
-			elsif(m/$EXPS{torrent}/) {
-				$self->save_torrent($1,$2);
-			}
-			elsif(m/$EXPS{magnet}\t(.+)$/) {
-				$self->save_torrent($1,$2);
-			}
-			elsif(m/$EXPS{magnet}/) {
-				$self->save_torrent($1);
-			}
-			else {
-				$self->print_err("Error: URL not supported [$_]\n");
-				$self->EXIT_CODE("ERROR");
-			}
+			return $self->download(@_);
 		},
 		title=>
 			defined($OPTS->{title}) ? $OPTS->{title} : 
@@ -342,6 +442,10 @@ sub MAIN {
 		simple=>$OPTS->{simple},
 		'recursive'=>$OPTS->{recursive},
 		quiet=>$OPTS->{quiet},
+		include=>$OPTS->{include},
+		exclude=>$OPTS->{exclude},
+		'no-queue'=>$OPTS->{'no-queue'},
+		'no-download'=>$OPTS->{'no-download'},
 	);
 	
 	if($OPTS->{input}) {
@@ -359,8 +463,11 @@ if($error) {
 if($done) {
 	exit 0;
 }
-else {
+elsif($error) {
 	exit $error;
+}
+else {
+	exit 0;
 }
 
 

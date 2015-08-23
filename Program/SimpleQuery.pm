@@ -6,6 +6,8 @@ use File::Spec::Functions qw/catfile/;
 use Getopt::Long;
 use MyPlace::URLRule::SimpleQuery;
 use Getopt::Long qw/GetOptionsFromArray/;
+use MyPlace::Script::Message;
+
 
 my %EXIT_CODE = qw/
 	OK			0
@@ -21,6 +23,7 @@ my @OPTIONS = qw/
 		help|h
 		manual|man
 		list|l
+		force
 		debug|d
 		database|hosts|sites|db=s
 		command|c:s
@@ -34,6 +37,12 @@ my @OPTIONS = qw/
 		retry
 		no-recursive|nr
 		no-createdir|nc
+		fullname
+		no-download
+		include|I:s
+		exclude|X:s
+		force-action|fa
+		item
 /;
 
 sub new {
@@ -77,11 +86,11 @@ sub do_list {
 	my $idx = 1;
 	foreach(@target) {
 		my @rows = @$_;
-		my $dbname = shift(@rows);
-		next unless($dbname);
-		print STDERR "[" . uc($dbname),"]:\n";
+		my $host = shift(@rows) || '*';
+		print STDERR "[" . uc($host),"]:\n";
 		foreach my $item(@rows) {
-			printf "\t[%03d] %-20s [%d]  %s\n",$idx,$item->[2],$item->[3],$item->[1];
+			my $dbname = $item->[4] || $host;
+			printf "%-20s: [%03d] %-20s [%d]  %s\n",$dbname,$idx,$item->[2],$item->[3],$item->[1];
 			$idx++;
 		}
 	}
@@ -108,10 +117,10 @@ sub get_request {
 	my %r;
 	foreach(@target) {
 		my @rows = @$_;
-		my $dbname = shift(@rows);
-		next unless($dbname);
+		my $host = shift(@rows) || '*';
 		foreach my $item(@rows) {
-			next unless($item && @{$item});
+			next unless($item && ref $item && @{$item});
+			my $dbname = $item->[4] || $host;
 			my $title = $OPTS->{createdir} ? $item->[1] . "/$dbname/" : "";
 			next unless(check_trash($title));
 			push @request,{
@@ -119,12 +128,25 @@ sub get_request {
 				level=>$item->[3],
 				url=>$item->[2],
 				title=>$title,
+				root_dir=>$item->[1],
 			};
 			push @{$r{directory}},$title if($title);
 			$count++;
 		}
 	}
 	return $count,\%r,@request;
+}
+sub show_directory {
+	my $dir = shift;
+	if(-l $dir) {
+		my $link = readlink($dir);
+		print STDERR "\n";
+		&app_message2("Working in directory: $dir (symbol link)\n\t=>$link\n");
+	}
+	else {
+		print STDERR "\n";
+		&app_message2("Working in directory: $dir\n");
+	}
 }
 
 sub do_action {
@@ -135,14 +157,24 @@ sub do_action {
 	use MyPlace::URLRule::OO;
 	my ($count,$r,@request) = $self->get_request(@target);
 	my $idx = 0;
+#    use Data::Dumper;
+#   print STDERR Data::Dumper->Dump([$OPTS],qw/*OPTS/),"\n";
 	my $URLRULE = new MyPlace::URLRule::OO(
 			'action'=>$action,
 			'thread'=>$OPTS->{thread},
 			'createdir'=>$OPTS->{createdir},
+			'options'=>{
+				fullname=>$OPTS->{fullname},
+			},
+			'include'=>$OPTS->{include},
+			'exclude'=>$OPTS->{exclude},
 	);
 	foreach(@request) {
 		$idx++;
 		$_->{progress} = "[$idx/$count]";
+		if($_->{root_dir}) {
+			show_directory($_->{root_dir});
+		}
 		$URLRULE->autoApply($_);
 		$URLRULE->reset();
 	}
@@ -154,6 +186,8 @@ sub do_action {
 	}
 }
 
+sub do_search {
+}
 
 sub do_downloader {
 	my $self = shift;
@@ -164,21 +198,28 @@ sub do_downloader {
 
 	my %r;
 	
+	if((!$OPTS->{force}) and $OPTS->{'no-download'}) {
+		return $self->do_action('DATABASE',@target);
+	}	
 	$self->do_action('DATABASE',@target);
 
 	use MyPlace::Program::Downloader;
 	my $DL = new MyPlace::Program::Downloader;
 	my @DLOPT = qw/--quiet --input urls.lst/;
 	push @DLOPT,"--recursive" if($OPTS->{recursive});
-	push @DLOPT,"--retry" unless($OPTS->{'no-retry'});
+	#push @DLOPT,"--retry" unless($OPTS->{'no-retry'});
+	push @DLOPT,"--retry" if($OPTS->{retry});
+	#unless($OPTS->{'no-retry'});
+	push @DLOPT,'--include',$OPTS->{include} if($OPTS->{include});
+	push @DLOPT,'--exclude',$OPTS->{exclude} if($OPTS->{exclude});
 	
 	if($OPTS->{createdir}) {
 		foreach(@target) {
 			my @rows = @$_;
-			my $dbname = shift(@rows);
-			next unless($dbname);
+			my $host = shift(@rows);
 			foreach my $item(@rows) {
 				next unless($item && @{$item});
+				my $dbname = $item->[4] || $host;
 				my $title = $item->[1] . "/$dbname";# . $item->[0];
 				next unless(check_trash($title));
 				push @request,$title;
@@ -215,7 +256,10 @@ sub do_downloader {
 sub do_update {
 	my $self = shift;
 	my $cmd = shift(@_) || "UPDATE";
-	unshift @_,$cmd;
+	if((!$self->{options}->{force}) and $self->{options}->{'no-download'}) {
+		$cmd = 'DATABASE' if($cmd =~ m/^(?:SAVE|UPDATE|DOWNLOADER|DOWNLOAD)$/i);
+	}
+	unshift @_,$self,$cmd;
 	goto &do_action;
 }
 
@@ -305,20 +349,30 @@ sub do_saveurl {
 	my $COMMAND = shift(@_) || $self->{COMMAND};
 	my $NAMES = shift(@_) || $self->{NAMES};
 	my $DATABASE = shift(@_) || $self->{DATABASE};
-	my $DATABASENAME = $DATABASE->[0];
 	my $OPTS = $self->{options};
-		my $SQ = MyPlace::URLRule::SimpleQuery->new($DATABASENAME);
+		my $SQ = MyPlace::URLRule::SimpleQuery->new($DATABASE->[0]);
 		my($id,$name) = $SQ->item(@$NAMES);
+		my $DATABASENAME = $DATABASE->[0];
 		if(!$id) {
 			print STDERR "Error: ",$name,"\n";
 			return $EXIT_CODE{FAILED};
 		}
+		if(!check_trash($name)) {
+			return $EXIT_CODE{DO_NOTHING};
+		}
 		use MyPlace::URLRule::OO;
+		my $action = $OPTS->{'force'} ? 'DOWNLOAD' : $OPTS->{'no-download'} ? 'DATABASE' : 'DOWNLOAD';
+		$action = '!' . $action  if($OPTS->{'force-action'});
 		my $URLRULE = new MyPlace::URLRule::OO(
-				'action'=>'DOWNLOADER',
+				'action'=>$action,
 				'thread'=>$OPTS->{thread},
 				'createdir'=>$OPTS->{createdir},
+				'include'=>$OPTS->{include},
+				'exclude'=>$OPTS->{exclude},
 		);
+		if($name) {
+			show_directory($name);
+		}
 		$URLRULE->autoApply({
 				count=>1,
 				level=>0,
@@ -355,6 +409,17 @@ sub query {
 				push @target,[$db,@result];
 			}
 		}
+		elsif($OPTS->{item}) {
+			foreach my $keyword(@$NAMES) {
+				my($status,@result) = $SQ->find_item($keyword);
+				if(!$status) {
+					print STDERR "[$db] Error: ",@result,"\n";
+				}
+				else {
+					push @target,[$db,@result];
+				}
+			}
+		}
 		else {
 			foreach my $keyword (@$NAMES) {
 				my($status,@result) = $SQ->query($keyword);
@@ -385,6 +450,10 @@ sub process_target {
 	elsif($cmd eq 'DOWNLOADER') {
 		my @target = $self->query();
 		return $self->do_downloader(@target);
+	}
+	elsif($cmd eq 'SEARCH') {
+		my @target = $self->query();
+		return $self->do_search(@target);
 	}
 	else {
 		my @target = $self->query();
@@ -632,6 +701,10 @@ sub execute {
 	$self->{COMMAND} = "SAVEURL" if($OPT->{saveurl});
 	$self->{DATABASE} = [$OPT->{database} ? split(/\s*,\s*/, $OPT->{database}) : @DEFAULT_HOST];
 	$self->{options} = $OPT;
+
+	######DISABLE FORCE MODE#####
+	#delete $OPT->{force};
+
 	return $self->process_command($self->{COMMAND});
 }
 

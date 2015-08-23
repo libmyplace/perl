@@ -17,7 +17,7 @@ use MyPlace::ParallelRun;
 use URI::Escape;
 use MyPlace::Script::Message;
 use Getopt::Long;
-use MyPlace::Usage;
+#use MyPlace::Usage;
 use MyPlace::Program::Download;
 my @OPTIONS = qw/
                 help|h|? version|ver edit-me manual|man
@@ -296,7 +296,8 @@ sub execute {
 		app_warning("Use single thread for downloading\n");
 	}
 	my $dl = new MyPlace::Program::Download (
-		-maxtime=>$OPTS{maxtime} || '0',
+		'--maxtime',
+		$OPTS{maxtime} || '0',
 		"-d",
 	);
 	$dl->set_reportor(\&download_done,$self);
@@ -349,10 +350,10 @@ sub execute {
 			if($logger) {system($logger,$filename,$url);}
 
 			my @args = (
-				'-saveas'=>$filename,
+				'--saveas'=>$filename,
 				'-n'=>$msghd,
 				'-r'=>$OPTS{'referer'} || $url,
-				'-url'=>$url,
+				'--url'=>$url,
 				$OPTS{'dl-force'} ? '-f' : (),
 			);
 			if($count > 1 and $muldown>1) {

@@ -70,4 +70,8 @@ sub exit_usage {
 	exit $exit;
 }
 
-return 1;
+
+return 1 if caller;
+exit 0 if(help_required(@ARGV));
+exit 1;
+

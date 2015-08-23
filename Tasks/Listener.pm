@@ -39,6 +39,9 @@ sub fire_event {
 	elsif($task->{status} == $TASK_STATUS->{DONOTHING}) {
 		app_message2 $report;
 	}
+	elsif($task->{status} == $TASK_STATUS->{NEWTASKS}) {
+		return @r;
+	}
 	else {
 		app_warning $report;
 	}

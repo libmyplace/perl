@@ -38,23 +38,30 @@ sub _parse_from_text {
 	my @sortedId;
 	foreach(@_) {
 		chomp;
+		s/^\s+//;
+		s/\s+$//;
 		next unless($_);
-		next if(m/^\s*$/);
 		#print STDERR "TEXT:[$_]\n";
 		if(m/^\s*\#OUTPUT\s*:\s*(.+?)\s*$/) {
 			push @{$self->{OUTPUT}},$1;
+			next;
 		}
-		elsif(m/^\s*([^\s]+)\s+([^\s]+)\s*$/) {
-			push @sortedId,$1 unless(defined $info{$1});
-			$info{$1} = $2;
+		my @va = split(/\s*\t\s*/,$_);
+		my $k = shift(@va);
+		my $c = scalar(@va);
+		my $v;
+		if($c >= 1) {
+			$v = [@va];
 		}
-		elsif(m/^\s*([^\s]+)\s*$/) {
-			push @sortedId,$1 unless(defined $info{$1});
-			$info{$1} = "";
+		elsif($k =~ m/^([^\s]+)\s+([^\s]+)$/) {
+			$k = $1;
+			$v = [$2];
 		}
 		else {
-			push @sortedId,$_;
+			$v = [""];
 		}
+		push @sortedId,$k unless(defined $info{$k});
+		$info{$k} = $v;
 	}
 	#die();
 	if(!@sortedId) {
@@ -68,34 +75,89 @@ sub _parse_from_text {
 
 sub item {
 	my $self = shift;
+	my $strict = 1;
+	return $self->find_item($strict,@_);
+}
+
+sub find_items {
+	my $self = shift;
+	my @result;
+	foreach my $idName(@_) {
+		my($status,@r) = $self->find_item(undef,$idName);
+		if($status) {
+			push @result,@r;
+		}
+	}
+	if(@result) {
+		return 1,@result;
+	}
+	else {
+		return undef,'Nothing found';
+	}
+
+}
+
+sub find_item {
+	my $self = shift;
+	my $strict = shift;
+
 	my $idName = shift;
+
 	my %table = %{$self->{info}};
+	my $target;
+	my @match;
+
 	foreach my $id(keys %table) {
 		if($id eq $idName) {
-			return ($id,$table{$id});
+			push @match,$id;
+			last;
 		}
 	}
-	foreach my $id(keys %table) {
-		if($table{$id} eq $idName) {
-			return ($id,$table{$id});
+	if(!@match) {
+		foreach my $id(keys %table) {
+			foreach my $name(@{$table{$id}}) {
+				if($name eq $idName) {
+					push @match,$id;
+					last;
+				}
+			}
+			last if($strict and @match);
 		}
 	}
-	return undef,"[$idName] match no item";
+	if(!@match) {
+		return undef,"[$idName] match no item";
+	}
+
+	my @result;
+	my @formats = @{$self->{OUTPUT}};
+	@formats = ('${KEY}','${VALUE}') unless(@formats);
+	foreach my $key (@match) {
+		my @values = @{$table{$key}};
+		my $value = $values[0];
+		my $values = join(",",@values);
+		my @item = ($key,$value);
+		foreach my $fmt (@formats) {
+			my $output = $fmt;
+			$output =~ s/\$\{(?:KEY|ID)\}/$key/g;
+			$output =~ s/\$\{(?:VALUE|NAME)\}/$value/g;
+			$output =~ s/\$\{(?:VALUES|NAMES)\}/$values/g;
+			push @item,$output;
+		}
+		push @result,\@item;
+	}
+	if($strict) {
+		return @{$result[0]};
+	}
+	return 1,@result;
 }
 
 sub additem {
 	my $self = shift;
 	my $key = shift;
-	my $value = shift(@_) || "";
+	my $value = (@_ ? [@_] : [""]);
+	#shift(@_) || "";
 	if(!$key) {
 		return undef,"Empty key not allowed";
-	}
-	if(!$value) {
-		foreach(keys %{$self->{info}}) {
-			if($self->{info}->{$_} eq $key) {
-				return undef,"Value <$key> already exists in KEY: $_";
-			}
-		}
 	}
 	return $self->_add({
 			info=>{$key=>$value},
@@ -129,28 +191,28 @@ sub _add {
 		if($id =~ m/^\s*$/) {
 			next;
 		}
-		elsif($id =~ m/^#/) {
-			next;
-		}
+		#	elsif($id =~ m/^#/) {
+		#	next;
+		#}
 		elsif(defined $info{$id}) {
 			if($self->{options}->{overwrite}) {
 				$count++;
-				print STDERR "$id: $info{$id} => $incoming{$id}\n";
+				print STDERR "$id: @{$info{$id}} => @{$incoming{$id}}\n";
 				$info{$id} = $incoming{$id};
 			}
 			else {
-				print STDERR "\tKey <$id> already defined as : " . ($info{$id} || "[EMPTY]") . "\n";
+				print STDERR "\tKey <$id> already defined as : " . (join(" ",@{$info{$id}}) || "[EMPTY]") . "\n";
 			}
 			next;
 		}
-		elsif(defined $info{"#$id"}) {
-			next;
-		}
+		#elsif(defined $info{"#$id"}) {
+		#	next;
+		#}
 		elsif(defined $incoming{$id}) {
 			$count++;
 			$info{$id} = $incoming{$id};
 			push @sorted,$id;
-			print STDERR "Add $id => $incoming{$id}\n";
+			print STDERR "Add $id => @{$incoming{$id}}\n";
 		}
 		else {
 			$count++;
@@ -180,8 +242,8 @@ sub saveTo {
 		#if($value eq 'TRUE') {
 		#	print FO $id,"\n";
 		#}
-		if($self->{info}->{$id}) {
-			print FO $id,"\t",$self->{info}->{$id},"\n";
+		if($self->{info}->{$id} && @{$self->{info}->{$id}}) {
+			print FO $id,"\t",join("\t",@{$self->{info}->{$id}}),"\n";
 		}
 		else {
 			print FO $id,"\n";
@@ -254,29 +316,44 @@ sub query {
 			}
 			my $matched = 0;
 			foreach my $key (@keys) {
-				if($r eq $info{$key}) {
-					push @Id,$key unless($target{$key});
-					$target{$key} = $info{$key};
-					$matched = 1;
+				foreach my $v(@{$info{$key}}) {
+					if($r eq $v) {
+						push @Id,$key unless($target{$key});
+						$target{$key} = $info{$key};
+						$matched = 1;
+						last;
+					}
 				}
 			}
 			next QUERY if($matched);
 
 			foreach my $key (@keys) {
-				if($key =~ m/$r/) {
+				my $expr = $r;
+				if($expr =~ m/^\/(.+)\/$/) {
+					$expr = $1;
+				}
+				if($key =~ m/$expr/) {
 					push @Id,$key unless($target{$key});
 					$target{$key} = $info{$key};
 				}
 			}
 			foreach my $key (@keys) {
-				if($info{$key} =~ m/$r/) {
-					push @Id,$key unless($target{$key});
-					$target{$key} = $info{$key};
+				my $expr = $r;
+				if($expr =~ m/^\/(.+)\/$/) {
+					$expr = $1;
 				}
+				foreach my $v(@{$info{$key}}) {
+					if($v =~ m/$expr/) {
+						push @Id,$key unless($target{$key});
+						$target{$key} = $info{$key};
+						last;
+					}
+				}	
 			}
 			foreach my $key (@keys) {
 				next if($target{$key});
-				if($r =~ m/^(?:$key|$info{$key})\s+/ or $r =~ m/\s+(?:$key|$info{$key})$/) {
+				my $exp = join("|",$key,@{$info{$key}});
+				if($r =~ m/^(?:$exp)\s+/ or $r =~ m/\s+(?:$exp)$/) {
 					push @Id,$key;
 					$target{$key} = $info{$key};
 					$matched = 1;
@@ -298,12 +375,15 @@ sub query {
 	my @formats = @{$self->{OUTPUT}};
 	@formats = ('${KEY}','${VALUE}') unless(@formats);
 	foreach my $key (@Id) {
-		my $value = $target{$key};
+		my @values = @{$target{$key}};
+		my $value = $values[0];
+		my $values = join(",",@values);
 		my @item = ($key,$value);
 		foreach my $fmt (@formats) {
 			my $output = $fmt;
 			$output =~ s/\$\{(?:KEY|ID)\}/$key/g;
 			$output =~ s/\$\{(?:VALUE|NAME)\}/$value/g;
+			$output =~ s/\$\{(?:VALUES|NAMES)\}/$values/g;
 			push @item,$output;
 		}
 		push @result,\@item;

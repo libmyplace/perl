@@ -7,14 +7,16 @@ use MyPlace::Tasks::File qw/read_tasks/;
 use MyPlace::Tasks::Utils qw/strtime/;
 use MyPlace::Script::Message;
 use MyPlace::Tasks::Task qw/$TASK_STATUS/;
+use Cwd qw/getcwd/;
 
-
+my $DEFAULT_CONTROL = '.control';
 
 sub new {
 	my $class = shift;
 	my $self = $class->SUPER::new(@_);
 	$self->{pending_commits} = [];
 	$self->{status_commit} = {commands=>[],subject=>'',comments=>[]};
+	$self->{CONTROL} ||= $DEFAULT_CONTROL;
 	return $self;
 }
 
@@ -24,17 +26,31 @@ sub now {
 sub more {
 	my $self = shift;
 	my $r = $self->SUPER::more();
-	return $r if($r);
-	app_message2 "[" . now() . "] Git> Checking repository ...  ";
-	$self->read_repository;
-	$self->write_repository;
+	return $r if($self->{runonce});
+
+	if($self->{options}{'no-remote-control'}) {
+		return $r;
+	}
+	$self->{CHECK_REMOTE} = $self->{CHECK_REMOTE} ? $self->{CHECK_REMOTE} + 1 : 1;
+	if($r and $self->{CHECK_REMOTE} < 20) {
+		return $r;
+	}
+	$self->{CHECK_REMOTE} = 1;
+
+	app_message2 "[" . now() . "] Git> Checking repository [$self->{CONTROL}]...  ";
+	my $WD = getcwd;
+	chdir($self->{CONTROL}) or return;
+	$self->read_repository(1);
+#	$self->write_repository;
+	chdir $WD;
 	print STDERR "\n";
-	return scalar(@{$self->{tasks}});
+	return $self->SUPER::more();
 }
 
 sub read_repository {
 	my $self = shift;
-	if($self->{options}{'no-pull'}) {
+	my $force = shift;
+	if((!$force) and $self->{options}{'no-pull'}) {
 		print STDERR "\n";
 		app_warning "Skip pull repository, option \"no-pull\" is on.\n";
 		return;
@@ -47,17 +63,17 @@ sub git_commit_item {
 	my $commit = shift;
 	my $all = shift;
 	foreach(@{$commit->{commands}}) {
-		run("git",@{$_});
+		git_run(@{$_});
 	}
 	my $comment = $commit->{comments} ? join("\n    ",@{$commit->{comments}}) : "";
 	if($commit->{subject}) {
 		$comment = $commit->{subject} .($comment ?  "\n\n    " . $comment : "");
 	}			
 	if($all) {
-		run("git","commit","-uno","-am",$comment);
+		git_run("commit","-uno","-am",$comment);
 	}
 	else {
-		run("git","commit","-uno","-am",$comment);
+		git_run("commit","-uno","-m",$comment);
 	}
 	#app_message2 "[" . now() . "] Git>  Commit " . $commit->{comment} . "\n";
 }
@@ -75,6 +91,7 @@ sub write_repository {
 			$self->{pending_commits} = [];
 			return;
 		}
+		git_run('pull');
 		app_message2 "[" . now() . "] Git> Perform pending commits \n";
 		my $lastcommit = pop(@{$self->{pending_commits}});
 		foreach my $commit (@{$self->{pending_commits}}) {
@@ -82,7 +99,7 @@ sub write_repository {
 		}
 		git_commit_item($lastcommit,1);
 		app_message2 "[" . now() . "] Git> Pushed to repository\n";
-		run("git","push","--force");
+		git_run("push","--force");
 		$self->{pending_commits} = [];
 	}
 	return 0;
@@ -92,9 +109,16 @@ sub run {
 	return system(@_) == 0;
 }
 
+sub git_run {
+	return system('git',@_) == 0;
+}
+
 sub git_head {
 	my $self = shift;
-	if(open FI,'<','.git/refs/heads/master') {
+	my $dir = shift;
+	my $file = '.git/refs/heads/master';
+	$file = $dir . "/" . $file if($dir);
+	if(open FI,'<',$file) {
 		my $r = <FI>;
 		chomp $r;
 		return $r;
@@ -107,7 +131,7 @@ sub git_head {
 
 sub git_rm {
 	my $self = shift;
-	run('git','rm','--',@_);
+	git_run('rm','--',@_);
 }
 
 sub git_empty_files {
@@ -127,20 +151,20 @@ sub exit {
 
 sub git_pull {
 	my $self = shift;
-	$self->{lasthead} = git_head();
-	run('git','pull');
-	$self->{head} = git_head();
-#	run('git','push');
+	$self->{lasthead} = git_head(@_);
+	git_run(@_,'pull');
+	$self->{head} = git_head(@_);
+#	git_run('push');
 }
 
 sub git_commit {
 	my $self = shift;
-	run('git','commit','-uno','-am',$_[0]);
+	git_run('commit','-uno','-am',$_[0]);
 }
 
 sub git_push {
 	my $self = shift;
-	run('git','push');
+	git_run(@_,'push');
 	$self->{head} = $self->{lasthead} = git_head();
 	return $self;
 }
@@ -198,7 +222,8 @@ TREEFILE:
 	if($total > 0) {
 		$commit{subject} = "Load $total task(s) from files";
 		app_message2 "[" . now() . "] Git> " . $commit{subject} . "\n";
-		push @{$self->{pending_commits}},\%commit;
+		git_commit_item(\%commit);
+		git_run('push','--force');
 		$self->save();
 		return 1;
 	}
@@ -209,7 +234,7 @@ TREEFILE:
 
 sub git_add_file {
 	my $self = shift;
-	run("git","add","--",@_);
+	git_run("add","--",@_);
 }
 
 sub git_add_task {
@@ -224,7 +249,7 @@ sub git_add_task {
 				#	param3:	write back or not
 	if($tasks && @{$tasks}) {
 		print STDERR "\t [OK]\n";
-		push @{$self->{tasks}},@{$tasks};
+		$self->queue(90,$tasks);
 		return @{$tasks};
 	}
 	else {
@@ -275,7 +300,7 @@ sub update_database {
 	my $dirs = shift || $self->trace;
 	return unless($dirs);
 	foreach(@$dirs) {
-		app_warning "Updating database [$_] ...";
+		app_warning "Updating [$_] ...";
 		if($self->{DEBUG}) {
 			print STDERR "\n";
 			app_warning "DEBUG MODE: update NOTHING\n";
@@ -284,9 +309,9 @@ sub update_database {
 		if(m/^-/) {
 			$_ = "./$_";
 		}
-		run("find \"$_/\" -type f >\"$_.txt\"");
-		run("git add --force --verbose -- \"$_.txt\"");
-		$self->pending_commit("Update database [$_]",['add',"--","$_.txt"]);
+		#run("find \"$_/\" -type f >\"$_.txt\"");
+		#run("git add --force --verbose -- \"$_.txt\"");
+		$self->pending_commit("Update [$_]",['add','-v','-f','--all','--ignore-errors','--ignore-missing',"--","$_.txt"]);
 	}
 }
 
@@ -325,8 +350,9 @@ sub status_update {
 					$p = "";
 					$d = $dir;
 				}
-				push @{$self->{status_commit}->{commands}},
-					['add','-v','--ignore-errors','-A','--',"$p$d/","$p$d.txt"];
+				$d =~ s/\/+$//;
+#				push @{$self->{status_commit}->{commands}},
+#					['add','-v','--ignore-errors','-A','--',"$p$d/","$p$d.txt"];
 				app_warning("Update database [$p: $d]\n");
 				if($self->{DEBUG}) {
 					print STDERR "\n";
@@ -349,9 +375,14 @@ sub status_update {
 					else {
 						run("find \"$d/\" -type f >\"$d.txt\"");
 					}
-					run("git",qw/add --v --ignore-errors -A --/,"$d/","$d.txt");
-					run("git","commit","-uno","-am","Update [$p: $d]\n");
-					run("git","push");
+					git_run(qw/add --v --ignore-errors -A --/,"$d/","$d.txt");
+					git_run("commit","-uno","-am","Update [$p: $d]\n");
+					if($self->{options}{'no-push'}) {
+						app_warning "Skip push repository, option \"no-push\" is on.\n";
+					} 
+					else {
+						git_run("push");
+					}
 					chdir $cwd;
 				}
 			}	
@@ -374,7 +405,7 @@ sub status_update {
 			$self->{counter} = {};
 			#{$TASK_STATUS->{FINISHED}} = 0;
 			#$self->{counter}{$TASK_STATUS->{ERROR}} = 0;
-			$self->read_repository;
+			#$self->read_repository;
 			$self->write_repository;
 			return;
 		}
@@ -384,7 +415,7 @@ sub status_update {
 			push @{$self->{pending_commits}},$self->{status_commit};
 			$self->{status_commit} = {commands=>[],subject=>'',comments=>[]};
 			$self->{counter} = {};
-			$self->read_repository;
+			#$self->read_repository;
 			$self->write_repository;
 		}
 }

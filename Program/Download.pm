@@ -38,6 +38,7 @@ my @OPTIONS = qw/
 		test
 		compressed
 		mirror|or=s@
+		post=s
 	/;
 my $proxy = '127.0.0.1:9050';
 my $blocked_host = '\n';#wretch\.cc|facebook\.com|fbcdn\.net';
@@ -52,7 +53,8 @@ my @CURL = qw{
 		--connect-timeout 15
 		--location
 };
-my $UA = 'Mozilla/5.0 (compatible; MSIE 9.0; Windows NT 6.1; Trident/5.0)';
+#my $UA = 'Mozilla/5.0 (compatible; MSIE 9.0; Windows NT 6.1; Trident/5.0)';
+my $UA = 'Mozilla/5.0 (Windows NT 6.1; rv:38.0) Gecko/20100101 Firefox/38.0';
 #'Mozilla/5.0 (X11; U; Linux i686; en-US; rv:1.9.0.3) Gecko/2008092416 Firefox/3.0.3 Firefox/3.0.1';
 push @WGET,'--user-agent',$UA;
 push @CURL,'--user-agent', $UA;
@@ -129,6 +131,7 @@ sub build_cmdline {
         push @result,"--url",$url;
         push @result,"--referer",$OPTS{referer} || $url;
         push @result,"--output",$saveas if($saveas);
+		push @result,"-d",$OPTS{post} if($OPTS{post});
 		if($OPTS{cookie}) {
 	        push @result,"--cookie",$OPTS{cookie} if(-f $OPTS{cookie});
 		    push @result,"--cookie-jar",$OPTS{cookie};
@@ -149,7 +152,7 @@ sub _process {
     my $cmdline=shift;
     my $retry = shift(@_) || 0;
     my $r=0;
-	#print STDERR join(" ",@{$cmdline}),"\n";
+#	print STDERR join(" ",@{$cmdline}),"\n";
     while($retry) {
         $retry--;
 		my @data;
@@ -339,7 +342,8 @@ sub _get_url {
 		}
 		if(!$saveas) {
 		    my $basename=$url;
-		    $basename =~ s/^.*\///g;
+		    $basename =~ s/^.*\///;
+			$basename =~ s/[\?\#].*//;
 		    $basename = "index.html" unless($basename);
 		    $saveas=$basename;
 		}
@@ -427,6 +431,7 @@ sub _download {
 			$eurl,
 			undef,
 			(
+				post=>$options->{post},
 				referer=>$refer,
 				cookie=>$cookie,
 				quiet=>$options->{quiet},

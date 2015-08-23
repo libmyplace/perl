@@ -65,7 +65,7 @@ sub readfile {
 	my $self = shift;
 	my $filename = shift;
 	$self->{lastfile} = $filename;
-	return unless(-r $filename);
+	return unless(-f $filename);
 	if(open FI,'<',$filename) {
 		$self->readtext(<FI>);
 		close FI;

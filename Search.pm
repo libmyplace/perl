@@ -43,7 +43,8 @@ sub get_url {
     my ($URL,$referer,$decoder,$verbose) = @_;
     print STDERR "Retriving $URL...\n" if($verbose);
     if(!$HTTP) {
-        $HTTP = MyPlace::Curl->new();
+        $HTTP = MyPlace::Curl->new("user-agent",' Mozilla/5.0 (compatible; MSIE 9.0; Windows NT 6.1; Trident/5.0)',
+			'location','');
     }
     my ($status,$data) =  $HTTP->get($URL,"--referer"=>$referer ? $referer : $URL);
     if(wantarray) {

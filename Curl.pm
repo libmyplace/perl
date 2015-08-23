@@ -15,15 +15,14 @@ BEGIN {
     @EXPORT         = qw();
     @EXPORT_OK      = qw();
 }
-my @CURL = qw{
-            curl
-            --globoff
-            --progress-bar
-            --create-dirs
-            --connect-timeout 15
-};
-#--location
-push @CURL,"--user-agent",'Mozilla/5.0 (X11; U; Linux i686; en-US; rv:1.9.0.3) Gecko/2008092416 Firefox/3.0.3 Firefox/3.0.1';
+my @CURL = qw/curl/;
+my @CURLOPT = (
+            'globoff'		=>'',
+            'progress-bar'	=>'',
+            'create-dirs'	=>'',
+            'connect-timeout'=>15,
+			'user-agent'=>'Mozilla/5.0 (X11; U; Linux i686; en-US; rv:1.9.0.3) Gecko/2008092416 Firefox/3.0.3 Firefox/3.0.1',
+);
 my $PROXY = '127.0.0.1:9050';
 my $BLOCKED_HOST = 'wretch\.cc|facebook\.com|fbcdn\.net';
 my $BLOCKED_EXP = qr/^[^\/]+:\/\/[^\/]*(?:$BLOCKED_HOST)(?:\/?|\/.*)$/;
@@ -153,7 +152,7 @@ sub error_message
 sub new {
     my $class = shift;
     my $self = bless {},$class;
-    $self->{options} = {@_};
+    $self->{options} = {@CURLOPT,@_};
     return $self;
 }
 sub set {
@@ -186,12 +185,14 @@ sub _run_curl
 {
     my $self = shift;
     my $decoder;
+	my $utf8;
     my @args;
     foreach($self->_build_cmd,@_) {
         next unless($_);
         if(m/^charset:([^\s]+)/) {
             require Encode;
             $decoder = Encode::find_encoding($1);
+			$utf8 = Encode::find_encoding('utf8');
         }
         else {
             push @args,$_;
@@ -202,7 +203,8 @@ sub _run_curl
     my $data = join("",<FI>);
     close FI;
     if($decoder && ref $decoder) {
-		$data = $decoder->decode($data);
+		$data = $utf8->encode($decoder->decode($data));
+
     }
     my $exit_code = $?;
     if($exit_code == 0) 

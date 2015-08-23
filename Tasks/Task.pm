@@ -19,6 +19,7 @@ our $STATUS = {
 	'IGNORED'=>4,
 	'DONOTHING'=>20,
 	'FATALERROR'=>30,
+	'NEWTASKS'=>40,
 };
 
 our $TASK_STATUS = $STATUS;
@@ -88,12 +89,11 @@ sub load {
 
 sub queue {
 	my $self = CORE::shift;
-	my $newtask = shift;
-	my $ontop = shift;
+	return unless(@_);
 	if(!$self->{NEWTASKS}) {
 		$self->{NEWTASKS} = [];
 	}
-	push @{$self->{NEWTASKS}},[$newtask,$ontop];
+	push @{$self->{NEWTASKS}},[@_];
 	return $self->{NEWTASKS};
 }
 

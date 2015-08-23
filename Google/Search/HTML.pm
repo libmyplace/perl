@@ -53,23 +53,23 @@ my %DEFAULT_PARAMS =
 		'biw'=>'1608',
 		'bih'=>'826',
 		'source'=>'lnms',
-		'ei'=>'-6bIVJrrMKa0sASUqYCQAw',
-		'ved'=>'0CAcQ_AUoAA',
-		'dpr'=>'0.9',
+		'filter'=>0,
+#		'ei'=>'-6bIVJrrMKa0sASUqYCQAw',
+#		'ved'=>'0CAcQ_AUoAA',
+#		'dpr'=>'0.9',
 	},
+#	http://www.google.com.hk/search?hl=n&site=imghp&tbm=isch&source=hp&biw=1440&bih=775&q=%E6%AF%94%E8%83%B8&oq=%E6%AF%94%E8%83%B8
     images => 
     {
         'safe'=>'off',
-        'hl'=>'en',
+        'hl'=>'n',
+		'site'=>'imghp',
 		'tbm'=>'isch',
 		'sa'=>'X',
 #		'sout'=>'0',
-		'biw'=>'1608',
-		'bih'=>'826',
-		'source'=>'lnms',
-		'ei'=>'-6bIVJrrMKa0sASUqYCQAw',
-		'ved'=>'0CAcQ_AUoAA',
-		'dpr'=>'0.9',
+		'biw'=>'1440',
+		'bih'=>'775',
+		'source'=>'hp',
     },
 );
 
@@ -141,7 +141,7 @@ sub get_api_url {
     }
 	my %DEF = %{$DEFAULT_PARAMS{$vertical}};
 	foreach (keys %DEF) {
-		next unless($DEF{$_});
+		next unless(defined $DEF{$_});
 		next if(defined $api_params{$_});
 		$api_params{$_} = $DEF{$_};
 	}
@@ -216,6 +216,7 @@ sub _make_data {
 }
 sub images_results_from {
 		my $code = shift;
+		#print STDERR $code,"\n";
 		my $results;
         if($code and $code =~ m/\;\s*dyn\.setResults\((.+?)\)\s*\;\s*/s) {
             $code = $1;
@@ -253,6 +254,7 @@ sub images_results_from {
 
 sub web_results_from {
 	my $html = shift;
+	#print STDERR $html,"\n";
 	my @h3 = split(/<\s*h3/,$html);
 	my @r;
 	shift @h3;
@@ -263,6 +265,17 @@ sub web_results_from {
 			$text =~ s/\s*<([^<]+)>\s*//g;
 			#print STDERR "$href\t$text\n";
 			push @r,{source=>$href,'text'=>$text};
+		}
+	}
+	if(!@r) {
+		foreach(@h3) {
+			if(m/\s*class="r"[^>]*><a\s*href="([^"]+)"[^>]*>(.+?)<\/a>/) {
+				my $href = $1;
+				my $text = $2;
+				$text =~ s/\s*<([^<]+)>\s*//g;
+				#print STDERR "$href\t$text\n";
+				push @r,{source=>$href,'text'=>$text};
+			}
 		}
 	}
 	return \@r if(@r);
@@ -306,6 +319,7 @@ sub search {
         $status = undef;
         $results = "Error retriving $URL\n";
     }
+	$status = undef unless($results and @$results);
 
     return $status,$results,$res;
 }

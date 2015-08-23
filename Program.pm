@@ -11,6 +11,7 @@ BEGIN {
     @EXPORT_OK      = qw(\%EXIT_CODE &EXIT_CODE);
 }
 use Getopt::Long qw/GetOptionsFromArray/;
+Getopt::Long::Configure ("bundling", "no_ignore_case");
 
 our %EXIT_CODE = (
 	OK=>0,
@@ -20,6 +21,7 @@ our %EXIT_CODE = (
 	IGNORED=>12,
 	UNKNOWN=>19,
 	USAGE=>3,
+	DEBUG=>20,
 );
 
 sub EXIT_CODE {
@@ -114,6 +116,12 @@ sub execute {
 	}
 	$self->{ARGV} = [];
 	return $self->MAIN($OPT,@_);
+}
+
+sub run {
+	my $class = shift;
+	my $self = new($class);
+	return $self->execute(@_);
 }
 
 my $MSG_PROMPT = '';

@@ -6,8 +6,13 @@ my $p = MyPlace::Program::Test->new({
 			'z','y','x'
 );
 
-exit $p->execute("--options2","options2_changed","--options3","options3",qw/a b c/,@ARGV);
+$p->execute("--options2","options2_changed","--options3","options3",qw/a b c/,@ARGV);
 
+MyPlace::Program::Test->run(
+	"--options2","options2_changed","--options3","options3",qw/a b c/,@ARGV
+);
+
+MyPlace::Program::Test->run(@ARGV);
 
 package MyPlace::Program::Test;
 use base 'MyPlace::Program';
@@ -19,6 +24,7 @@ sub OPTIONS {
 		options3|o3=s
 		options4|o4=s
 		options5|o5=s
+		help|h
 	/;
 }
 
@@ -27,7 +33,7 @@ sub MAIN {
 	my $options = shift;
 	my @args = @_;
 	use Data::Dumper;
-	print STDERR Data::Dumper->Dump([$options,\@args],[qw/$options @args/]),"\n";
+	print STDERR Data::Dumper->Dump([$options,\@args],[qw/$options $args/]),"\n";
 }
 
 __END__

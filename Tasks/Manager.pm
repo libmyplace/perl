@@ -45,16 +45,23 @@ sub get {
 use Cwd qw/getcwd/;
 
 my $MSG_PROMPT = 'MTM';
+
+sub p_prompt {
+	print STDERR "\n",$MSG_PROMPT,">\n";
+	&p_msg(@_) if(@_);
+}
+
 sub p_msg {
-	print STDERR "$MSG_PROMPT> ",@_;
+	print STDERR "  ",@_;
 }
 
 sub p_err {
-	print STDERR "$MSG_PROMPT> ",@_;
+	goto &p_msg;
 }
 
 sub p_warn {
-	print STDERR "$MSG_PROMPT> ",@_;
+	goto &p_msg;
+
 }
 sub _read_lines {
 	my $filename = shift;
@@ -87,10 +94,10 @@ sub _write_lines {
 	my $filename = shift;
 	my $dir = shift;
 	my $source = $dir ? catfile($dir,$filename) : $filename;
-
+	my $mode = shift(@_) || '>';
 	my @input = (($data && @{$data}) ? @{$data} : ());
 	my $counter = 0;
-	if(open(my $FO,'>',$source)) {
+	if(open(my $FO,$mode,$source)) {
 		$counter = 0;
 		foreach(@input) {
 			$counter++;
@@ -131,14 +138,14 @@ sub run {
 
 
 	my %opt = %{$self->{options}};
-	my @queue = @_;
+	my @arguments = @_;
 	
-	if(@queue and $queue[0] and -d $queue[0] and !$opt{directory}) {
-		$opt{directory} = shift(@queue);
+	if(@arguments and $arguments[0] and -d $arguments[0] and !$opt{directory}) {
+		$opt{directory} = shift(@arguments);
 		
 	}
 
-	if(!(@queue or $opt{input})) {
+	if(!(@arguments or $opt{input})) {
 		$opt{input} = 'urls.lst';
 	}
 
@@ -152,6 +159,7 @@ sub run {
 			defined($opt{directory}) ? $opt{directory} : 
 			'MyPlace Tasks Manager';
 
+	&p_prompt();
 
 	if(!$worker) {
 		p_err "Error not worker defined\n";
@@ -196,9 +204,10 @@ sub run {
 
 
 
-	my (@done,@failed,@ignore,@input);
+	my (@queue,@done,@failed,@ignore,@input);
 
 	@input = &_read_lines($opt{input}) if($opt{input});
+	push @input,@arguments;
 
 	if($opt{simple}) {
 		push @queue,@input;
@@ -207,7 +216,7 @@ sub run {
 		@done = &_read_lines($DB_DONE,$CONFIG_DIR);
 		@failed = &_read_lines($DB_FAILED,$CONFIG_DIR);
 		@ignore = &_read_lines($DB_IGNORE,$CONFIG_DIR);
-		push @queue, &_read_lines($DB_QUEUE,$CONFIG_DIR);
+		push @queue, &_read_lines($DB_QUEUE,$CONFIG_DIR) unless($opt{'no-queue'});
 		if($opt{force}) {
 			unshift @queue,@input;
 		}
@@ -216,24 +225,51 @@ sub run {
 		}
 
 		if($opt{retry}) {
-			push @queue,@failed;
-			@failed = ();
+			my @newfailed;
+			foreach(@failed) {
+				if($opt{include} and $_ !~ m/$opt{include}/) {
+					push @newfailed,$_;
+					next;
+				}
+				elsif($opt{exclude} and $_ =~ m/$opt{exclude}/) {
+					push @newfailed,$_;
+					next;
+				}
+				push @queue,$_;
+			}
+			@failed = @newfailed;
+			&_write_lines(\@failed,$DB_FAILED,$CONFIG_DIR);
 		}
 	}
-	elsif(!@input) {
+	elsif(!(@queue or @input)) {
 		return $self->exit($CWD_KEPT,$COUNTER);
 	}
 	else {
-		@queue = @input;
+		push @queue,@input;
+	}
+	if($opt{include}) {
+		@queue = grep(/$opt{include}/,@queue);
+	}
+	if($opt{exclude}) {
+		@queue = grep(!/$opt{exclude}/,@queue);
 	}
 	my $count = scalar(@queue);
+	p_msg "QUEUE:" . scalar(@queue) .
+		  ", DONE :" . scalar(@done) . 
+		  ", IGNORED: " . scalar(@ignore) . 
+		  ", FAILED: " . scalar(@failed) .
+	      "\n";
 
 	if(!$count) {
 		&p_warn("Tasks queue was empty\n") unless($opt{quiet});
-		return $self->exit($CWD_KEPT,$COUNTER,2,"Empty tasks queue");
+		return $self->exit($CWD_KEPT,$COUNTER,$self->EXIT_CODE('IGNORED'),"Empty tasks queue");
 	}
-	elsif($count > 1) {
-		&p_msg("Get $count tasks in queue\n");
+	elsif($opt{simple}) {
+	}
+	elsif((! -d $CONFIG_DIR)) {
+		if(! mkdir $CONFIG_DIR) {
+			p_err "Error creating directory <$CONFIG_DIR>: $!\n";
+		}
 	}
 	
 	my @wopts;
@@ -251,14 +287,14 @@ sub run {
 					&p_warn("Error creating directory $CONFIG_DIR: $!\n");
 				}
 			}
-			&_write_lines(\@done,$DB_DONE,$CONFIG_DIR);
+			#&_write_lines(\@done,$DB_DONE,$CONFIG_DIR);
 			&_write_lines(\@queue,$DB_QUEUE,$CONFIG_DIR);
 			if($opt{'ignore-failed'}) {
 				&_write_lines([@ignore,@failed],$DB_FAILED,$CONFIG_DIR);
 			}
-			else {
-				&_write_lines(\@failed,$DB_FAILED,$CONFIG_DIR);
-			}
+#			else {
+#					&_write_lines(\@failed,$DB_FAILED,$CONFIG_DIR);
+#			}
 		}
 		return $self->exit(
 			$CWD_KEPT,
@@ -283,8 +319,7 @@ sub run {
 		my $task = $queue[0];
 		my $r;
 		$index++;
-			print STDERR "\n";
-			&p_msg("[$index/$count]\n");
+		&p_prompt("[$index/$count] $queue[0]\n");
 		if(ref $worker) {
 			$r = &$worker($task,@wopts);
 		}
@@ -302,6 +337,7 @@ sub run {
 			#	&p_msg("[$index/$count] DONE\n");
 			$COUNTER++;
 			shift @queue;
+			&_write_lines([$task],$DB_DONE,$CONFIG_DIR,'>>');
 			push @done,$task;
 		}
 		elsif($r == 2) {
@@ -312,11 +348,19 @@ sub run {
 		elsif($r == $self->EXIT_CODE('IGNORED')) {
 			#	&p_msg("[$index/$count] IGNORED\n");
 				shift @queue;
+				&_write_lines([$task],$DB_DONE,$CONFIG_DIR,'>>');
 				push @done,$task;
+		}
+		elsif($r == $self->EXIT_CODE("DEBUG")) {
+			shift @queue;
+		}
+		elsif($r == $self->EXIT_CODE("UNKNOWN")) {
+			shift @queue;
 		}
 		else {
 			shift @queue;
 			#&p_msg("[$index/$count] FAILED\n");
+			&_write_lines([$task],$DB_FAILED,$CONFIG_DIR,'>>');
 			push @failed,$task;
 		}
 		unless($opt{quiet} or $opt{simple}) {

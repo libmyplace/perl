@@ -112,10 +112,10 @@ sub _parse_suffix {
 	my $r;
 	if(!$suffix) {
 		if($url =~ m/\.jpg$/) {
-			$r = [qw/.mov.3in1.jpg .1.jpg .2.jpg .3.jpg .jpg/];
+			$r = [qw/.mov.3in1.jpg .jpg .1.jpg .2.jpg .p.1.jpg .p.2.jpg/];
 		}
 		else {
-			$r = [qw/.flv \/500k.mp4 .mov .f4v/];
+			$r = [qw/\/500k.ts .flv .mov \/500k.mp4/];
 		}
 	}
 	else {
@@ -124,10 +124,11 @@ sub _parse_suffix {
 	return $r;
 }
 sub download_urls {
+	my $OPTS = shift;
 	my $tasks = shift;
-	my $hist = shift;
-	my $overwrite = shift;
-	my $suffix = shift;
+	my $hist = shift(@_) || $OPTS->{history};
+	my $overwrite = shift(@_) || $OPTS->{overwrite};
+	my $suffix = shift(@_) || $OPTS->{suffix};
 	if(!($tasks and @{$tasks})) {
 		print STDERR "No tasks to download\n";
 		return 1;
@@ -148,7 +149,7 @@ sub download_urls {
 			print STDERR "No URL specified for task!\n";
 			next;
 		}
-		my @args = _preprocess($task->[0],$task->[1],$hist,$overwrite,$suffix);
+		my @args = _preprocess($OPTS,$task->[0],$task->[1],$suffix);
 		if(@args) {
 			my($input,$output) = _download(@args);
 			if($input) {
@@ -161,18 +162,65 @@ sub download_urls {
 	hist_save() if($hist);
 	return 0;
 }
+our @DOMAINS = (
+	['v.weipai.cn','oldvideo.qiniudn.com'],
+	['aliv3.weipai.cn', 'aliv.weipai.cn'],
+);
+
+sub DUP_URL {
+	my $url = shift;
+	my @r;
+	my $lurl = $url;
+	my $prefix;
+	my $domain;
+	my $suffix;
+	if($lurl =~ m/^([a-z]+:\/\/)([^\/]+)(.*)$/) {
+		$prefix = $1;
+		$domain = lc($2);
+		$suffix = $3;
+	}
+	else {
+		return ($url);
+	}
+	foreach (@DOMAINS) {
+		my $match = 0;
+		foreach my $d(@$_) {
+			if(lc($d) eq $domain) {
+				$match = 1;
+				last;
+			}
+		}
+		if($match) {
+			foreach my $d(@$_) {
+				push @r, $prefix . $d . $suffix;
+			}
+			last;
+		}
+	}
+	if(@r) {
+		#	print STDERR "[DUPURL] $url =>\n";
+		#print STDERR "\t" . join("\n\t",@r) . "\n";
+		return @r;
+	}	
+	return ($url);
+}
 
 sub _preprocess {
+	my $OPTS = shift;
 	my $url = shift;
 	my $basename = shift;
-	my $hist = shift;
-	my $overwrite = shift;
-	my $suffix = shift(@_) || '';
+	my $suffix = shift(@_) || $OPTS->{exts};
+	my $hist = shift(@_) || $OPTS->{history};
+	my $overwrite = shift(@_) || $OPTS->{overwrite};
+	my $mtm = $OPTS->{mtm};
+
+
 	$suffix = _parse_suffix($url,$suffix);
 
-	my $noext = qr/(?:\/500k\.mp4|\.mov\.l\.jpg|\.mov\.3in1\.jpg|\.jpg|\.\d\.jpg|\.mov|\.mp4|\.flv|\.f4v)$/o;
+	my $noext = qr/(?:\/500k\.ts|\/500k\.mp4|\.mov\.l\.jpg|\.mov\.3in1\.jpg|\.jpg|\.\d\.jpg|\.mov|\.mp4|\.flv|\.f4v)$/o;
 
 	$url =~ s/$noext//;
+	$url =~ s/\/thumbnail\/.*\/video\//\/video\//;
 
 	if(!$basename) {
 		$basename = $url;
@@ -201,17 +249,40 @@ sub _preprocess {
 			$dstr =~ s/\d\d$//;
 			$o_basename = $dstr . '_' . $o_name;
 		}
-		foreach(keys %$exts) {
-			if(-f $basename . $exts->{$_}) {
-				print STDERR "  Ignored, File \"$basename" . $exts->{$_} . "\" exists\n";
+		foreach(keys %$exts,values %$exts) {
+			if(-f $basename . $_) {
+				print STDERR "  Ignored, File \"$basename" . $_ . "\" exists\n";
 				return undef;
 			}
-			elsif( -f $o_basename . $exts->{$_}) {
-				print STDERR "  Ignored, Old file \"$o_basename" . $exts->{$_} . "\" exists\n";
+			elsif( -f $o_basename . $_) {
+				print STDERR "  Ignored, Old file \"$o_basename" . $_ . "\" exists\n";
 				return undef;
 			}
 		}
 	}
+	if($mtm and -f '.mtm/done.txt' and open FI,'<','.mtm/done.txt') {
+		print STDERR "  Checking MTM database <done.txt> ... ";
+		my %DONE;
+		foreach (<FI>) {
+			chomp;
+			s/\t.*$//;
+			@DONE{(DUP_URL($_))} = (1,1,1,1,1);
+		}
+		close FI;
+		if(%DONE) {
+			foreach my $suf(@$suffix) {
+				my $ext = $exts->{$suf};
+				my $input = $url . $suf;
+				if($DONE{$input}) {
+					print STDERR "[EXIST]\n  Ignored, url recored in <.mtm/done.txt>\n   $input\n";
+					return undef;
+				}
+			}
+		}
+		print STDERR "[OK]\n";
+	}
+	$url =~ s/aliv3\.weipai\.cn/aliv\.weipai\.cn/;
+	$url =~ s/oldvideo\.qiniudn\.com/v.weipai.cn/;
 	return $url,$basename,$suffix,$exts;
 }
 
@@ -236,8 +307,14 @@ sub _download {
 }
 
 sub download {
-	my @args = _preprocess(@_);
+	#$OPTS->{history},$OPTS->{overwrite},$OPTS->{exts}
+	my $OPTS = shift;
+	my @args = _preprocess($OPTS,@_);
+	
 	if(@args && $args[0]) {
+		if($OPTS->{"no-download"}) {
+			return MyPlace::Program::EXIT_CODE("UNKNOWN");
+		}
 		use Cwd qw/getcwd/;
 		my $PWD = getcwd;
 		$PWD =~ s/\/+$//;
@@ -274,6 +351,8 @@ sub OPTIONS {
 		history|hist
 		overwrite|o
 		exts:s
+		mtm
+		no-download
 	/;
 }
 
@@ -288,9 +367,9 @@ sub MAIN {
 	my $self = shift;
 	my $OPTS = shift;
 	my @args = @_;
-	return download(@args,
-		$OPTS->{history},$OPTS->{overwrite},$OPTS->{exts}
-	);
+	return download($OPTS,@args);
+	#$OPTS->{history},$OPTS->{overwrite},$OPTS->{exts}
+	#);
 }
 
 return 1 if caller;

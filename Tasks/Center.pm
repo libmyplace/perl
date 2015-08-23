@@ -7,6 +7,7 @@ use File::Spec;
 use MyPlace::Script::Message;
 use MyPlace::Tasks::Utils qw/strtime/;
 use MyPlace::Tasks::File qw/read_tasks/;
+my $DEFAULT_TASKS_LEVEL = 10;
 
 sub new {
 	my $class = shift;
@@ -15,6 +16,7 @@ sub new {
 	$self->{DIR_CONFIG} = $self->{config}->{_DIR};
 	$self->{options} = {@_};
 	$self->{tasks} = [];
+	$self->{pools} = [];
 	$self->{tasks_done} = [];
 	$self->{tasks_ignored} = [];
 	$self->{tasks_error} = [];
@@ -35,6 +37,27 @@ sub new {
 	$self->{FILE_STATUS} = $self->C_FILE('STATUS.md');
 	$self->{FILE_LOCALTASKS} = $self->C_FILE('localtasks');
 	unlink $self->{FILE_HISTORY};
+	$self->watch(90,$self->{FILE_LOCALTASKS},
+		DEBUG=>$self->{DEBUG},
+		data => sub {
+			my $filename = $self->{FILE_LOCALTASKS};
+			return unless (-f $filename);
+			my $tasks;
+			if($self->{DEBUG}) {
+				$tasks = &read_tasks($filename,"",0,1);
+			}
+			else {
+				$tasks = &read_tasks($filename,"",1,1);
+			}
+			if($tasks and @{$tasks}) {
+				return @{$tasks};
+			}	
+		},
+		queue=>1,
+		freq=>10,
+		ON_TOP=>1,
+		level=>80,
+	);
 	return $self;
 }
 
@@ -111,7 +134,7 @@ if(!$self->{DEBUG}) {
 		close FO;
 	}
 	else {
-		app_error("[" . now() . "] Error opening <$output> for writting\n");
+		app_error("[" . strtime() . "] Error opening <$output> for writting\n");
 	}
 }
 	app_warning "Tasks: $tasks_summary\n";
@@ -128,12 +151,8 @@ sub status {
 		push @text, '    * [' . strtime($self->{last_task}->{time_begin}) . "] " . $self->{last_task}->to_string;
 	}
 	if($self->{tasks} and @{$self->{tasks}}) {
-		push @text, "* Pendings:";
-		my $idx = 0;
-		foreach(@{$self->{tasks}}) {
-			$idx++;
-			push @text, '    *' . $_->to_string;
-		}
+		my $count = $self->more();
+		push @text, "* Pendings $count tasks.";
 	}
 	if($self->{tasks_done} and @{$self->{tasks_done}}) {
 		push @text, "* Finished:";
@@ -155,44 +174,86 @@ sub status {
 }
 
 
+sub runonce {
+	my $self = shift;
+	$self->{runonce} = 1;
+	if(@_) {
+		$self->queue(MyPlace::Tasks::Task->new(@_));
+	}
+}
+
+sub watch {
+	my $self = shift;
+	my $level = shift;
+	my $name = shift;
+	use MyPlace::Tasks::Pool;
+	my $pool = MyPlace::Tasks::Pool->new($name,@_);
+	if(!$self->{pools}->[$level]) {
+		$self->{pools}->[$level] = [];
+	}
+	push @{$self->{pools}->[$level]},$pool;
+	app_message "Start watching tasks pool of [$name] ...\n";
+	return;
+}
+
 sub more {
 	my $self = shift;
 	$self->{called_sub_more} += 1;
-	my $count = @{$self->{tasks}};
+	my $count = 0;
+	my $POOLS = $self->{pools};
+	my $TASKS = $self->{tasks};
+	for my $level (reverse 0 .. 100) {
+		last if($TASKS->[$level] and @{$TASKS->[$level]});
+		next unless($POOLS->[$level] and @{$POOLS->[$level]});
+		foreach my $builder(@{$POOLS->[$level]}) {
+			my @t = $builder->more();
+			if(@t) {
+				my $nextlevel = $builder->{level} || ($level);
+				my @queue;
+				foreach(@t) {
+					next unless($_);
+					next unless(ref $_);
+					push @queue,$_;
+					print STDERR "#L" . $nextlevel . "# Queuing< " . $_->to_string . "\n";
+				}
+				$self->queue($nextlevel,\@queue,$builder->{ON_TOP}) if(@queue);
+			}
+		}
+		last if($TASKS->[$level] and @{$TASKS->[$level]});
+	}
+	for my $level (reverse 0 .. 101) {
+		next unless($self->{tasks}->[$level]);
+		$count += scalar(@{$self->{tasks}->[$level]});
+	}
 	if($count>0) {
 		return $count;
 	}
-	elsif($self->read_localfile) {
-		return scalar(@{$self->{tasks}});
+	elsif($self->{runonce}) {
+		return 0;
 	}
+#	elsif($self->read_localfile) {
+#		return $self->more();
+#		#scalar(@{$self->{tasks}});
+#	}
 	elsif($self->{called_sub_more} > 1) {
-		sleep $self->{options}->{sleep};
+		sleep $self->{options}->{sleep} if($self->{options}->{sleep});
 	}
 	return 0;
 }
 
-sub read_localfile {
-	my $self = shift;
-	my $filename = $self->{FILE_LOCALTASKS};
-	return unless (-f $filename);
-	my $tasks;
-	if($self->{DEBUG}) {
-		$tasks = &read_tasks($filename,"",0);
-	}
-	else {
-		$tasks = &read_tasks($filename,"",1);
-	}
-	if($tasks and @{$tasks}) {
-		my $count = @$tasks;
-		app_message2 "Read $count task(s) from <$filename>\n";
-		push @{$self->{tasks}},@$tasks;
-	}
-	return $tasks;
-}
 
 sub next {
 	my $self = shift;
-	my $task = shift(@{$self->{tasks}});
+	my $task;
+	my $tasks = $self->{tasks};
+	return unless($tasks and @$tasks);
+	for my $level(reverse 0 .. 101) {
+		next unless($tasks->[$level] and @{$tasks->[$level]});
+		$task = shift(@{$tasks->[$level]});
+		$task->{level} = $level;
+		last;
+	}
+	return unless($task);
 	$self->{last_task} = $task;
 	$self->{status} = 'NEXT';
 	return $task;
@@ -200,28 +261,67 @@ sub next {
 
 sub queue {
 	my $self = shift;
-	my $task = shift;
-	my $ontop = shift;
-	if($task) {
-		my @tasks = ((ref $task eq 'ARRAY')? @$task : ($task));
-		if($ontop) {
-			unshift @{$self->{tasks}},@tasks;
-		}
-		else {
-			push @{$self->{tasks}},@tasks;
-		}
+	my $level = shift;
+
+	return unless(defined $level);
+	if($level =~ m/^\s*(\d+)\s*$/) {
+		$level = $1;
 	}
-	return $task;
+	else {
+		unshift @_,$level;
+		$level = undef;
+	}
+
+	my $task = shift;
+	return unless($task);
+
+
+
+	my $ontop = shift;
+	
+	my @tasks;
+
+	my $TASK_TYPE = ref $task;
+
+	if(!$TASK_TYPE) {
+		$task = MyPlace::Tasks::Task->new_from_string($task);
+		push @tasks,$task;
+	}
+	elsif($TASK_TYPE eq 'ARRAY') {
+		@tasks = (@{$task});
+		$level = $tasks[0]->{level} if((!defined $level) and (defined $tasks[0]->{level}));
+	}
+	else {
+		push @tasks,$task;
+		$level = $task->{level} if((!defined $level) and (defined $task->{level}));
+	}
+
+	return unless(@tasks);
+
+	$level = $DEFAULT_TASKS_LEVEL if(!defined $level);
+	$level = int($level);
+	$level = 0 if($level < 0);
+	$level = 100 if($level > 100);
+	
+	$self->{tasks} = [] unless($self->{tasks});
+	$self->{tasks}->[$level] = [] unless($self->{tasks}->[$level]);
+	if($ontop) {
+		unshift @{$self->{tasks}->[$level]},@tasks;
+	}
+	else {
+		push @{$self->{tasks}->[$level]},@tasks;
+	}
+	return $self;
 }
 
 sub abort {
 	my $self = shift;
 	my $task = $self->{last_task};
-	$self->{last_task} = undef;
 	if($task) {
 		$task->{status} = $TASK_STATUS->{'IGNORE'};
-		unshift @{$self->{tasks}},$task;
+		$self->queue($task->{level} || $DEFAULT_TASKS_LEVEL,$task,1);
 	}
+	$self->{last_task} = undef;
 	$self->save();
 	return 0;
 }
@@ -246,6 +346,9 @@ sub finish {
 	}
 	elsif($status == $TASK_STATUS->{'DONOTHING'}) {
 		push @{$self->{tasks_donothing}},$task;
+	}
+	elsif($status == $TASK_STATUS->{'NEWTASKS'}) {
+		$self->queue($task->{result},1) if($task->{result});
 	}
 	
 	if($task->tasks) {
@@ -339,19 +442,19 @@ sub failed {
 sub exit {
 	my $self = shift;
 	my $task = $self->{last_task};
-	$self->{last_task} = undef;
 	if($task) {
 		if(!$task->{status}) {
-			unshift @{$self->{tasks}},$task;
+			$self->queue($task->{level} || $DEFAULT_TASKS_LEVEL,$task,1);
 		}
 		elsif($task->{status} == 2) {
-			unshift @{$self->{tasks}},$task;
+			$self->queue($task->{level} || $DEFAULT_TASKS_LEVEL,$task,1);
 		}
 		else {
 		}
 		$self->log_task_finished($task);
 	}
 	$self->status_update($task,1);
+	$self->{last_task} = undef;
 	$self->save();
 	return 0;
 }
@@ -368,8 +471,17 @@ sub save {
 		return;
 	}
 	my $sec = "Tasks::Center";
-	$self->{config}->{$sec . "::tasks"} = [];
-	push @{$self->{config}->{$sec . "::tasks"}},$_->save() foreach(@{$self->{tasks}});
+	delete $self->{config}->{$sec . "::tasks"};
+	foreach my $level(reverse 0 .. 100) {
+		next unless($self->{tasks}->[$level]);
+		$self->{config}->{$sec . "::tasks$level"} = [];
+		#	print STDERR "Saveing Tasks [$level] ...\n";
+		foreach (@{$self->{tasks}->[$level]}) {
+			my $text = $_->save();
+			#	print STDERR " ... $text\n";
+			push @{$self->{config}->{$sec . "::tasks$level"}},$text;
+		}	
+	}
 	foreach(keys %{$self->{options}}){
 		$self->{config}->{$sec. "::options.$_"} = $self->{options}->{$_};
 	}
@@ -380,10 +492,20 @@ sub load {
 	return unless($self->{config});
 	my $sec = "Tasks::Center";
 	if($self->{config}->{$sec . "::tasks"}) {
-		$self->{tasks} = [];
+		$self->{tasks}->[$DEFAULT_TASKS_LEVEL] = [];
 		foreach(@{$self->{config}->{$sec . "::tasks"}}) {
-			my $task = new MyPlace::Tasks::Task;
-			push @{$self->{tasks}},$task->load($_);
+			next unless($_);
+			my $task = MyPlace::Tasks::Task->new_from_string($_);
+			#	print STDERR $_,"\n";
+			push @{$self->{tasks}->[$DEFAULT_TASKS_LEVEL]},$task;
+		}
+	}
+	foreach my $level (reverse 0 .. 100) {
+		next unless $self->{config}->{$sec . "::tasks$level"};
+		$self->{tasks}->[$level] = [];
+		foreach(@{$self->{config}->{$sec . "::tasks$level"}}) {
+			next unless($_);
+			push @{$self->{tasks}->[$level]},MyPlace::Tasks::Task->new_from_string($_);
 		}
 	}
 	foreach (keys %{$self->{config}}) {
@@ -391,6 +513,9 @@ sub load {
 			$self->{options}->{$1} = $self->{config}->{$_};
 		}
 	}
+#	use Data::Dumper;
+#	print STDERR Data::Dumper->Dump([$self->{tasks}],['*tasks']),"\n";
+#	die();
 }
 
 sub ignore {

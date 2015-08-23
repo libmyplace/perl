@@ -36,10 +36,11 @@ our @SITES = (
 	#http://torrentproject.se/torrent/:HASH:.torrent
 	qw{
 		http://www.sobt.org/Tool/downbt?info=:HASH:
-		http://torcache.net/torrent/:HASH:?title=TORRENTNAME
+		http://torcache.net/torrent/:HASH:.torrent
 		http://www.torrenthound.com/torrent/:HASH:
 		http://torrage.com/torrent/:HASH:.torrent
 		http://zoink.it/torrent/:HASH:.torrent
+		http://www.mp4ba.com/down.php?date=1422367802&hash=:HASH:
 	}
 );
 
@@ -69,7 +70,7 @@ sub download {
 	my $URL = shift;
 	my $REF = shift(@_) || $URL;
 	$DL ||= MyPlace::Program::Download->new('--compressed','--quiet','--maxtry',1);
-	if($DL->execute("-r=$REF","-u=$URL","-s=$output") == 0) {
+	if($DL->execute("-r",$REF,"-u",$URL,"-s",$output) == 0) {
 		my ($ok,$type) = checktype($output);
 		if($ok) {
 			return 1;

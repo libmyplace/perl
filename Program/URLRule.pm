@@ -34,11 +34,10 @@ sub OPTIONS {qw/
 	sed
 	write|w
 	disable=s@
+	input|i=s
+	follow
+	reposter
 /;}
-
-
-
-
 
 
 sub p_out {
@@ -81,7 +80,9 @@ sub DB_INIT {
 	if(defined($OPTS{hosts})) {
 		$self->{USQ} = MyPlace::URLRule::SimpleQuery->new();
 		my @opts  = ('overwrite'=>1) if($OPTS{overwrite});
-		$self->{USQ}->load_db($OPTS{hosts},@opts);
+		foreach my $host (split(/\s*,\s*/,$OPTS{hosts})) {
+			$self->{USQ}->load_db($host,@opts);
+		}
 	}
 	if(defined($OPTS{database})) {
 		$self->{DB} = [MyPlace::URLRule::Database->new()];
@@ -113,15 +114,38 @@ sub query {
 	my @target;
 	if($OPTS{url}) {
 		push @target,{
-			url=>$_[0],
-			level=>($_[1] || 0),
-			title=>($_[2] || ""),
-		};
+			url=>shift(@_),
+			level=>(shift(@_) || 0),
+			title=>(shift(@_) || ""),
+		}
 	}
+	my @queries;
+	my $q = shift(@_);
+	while($q) {
+		if($q =~ m/^http/) {
+			my $level = shift(@_);
+			if(!$level) {
+				$level = 0;
+			}
+			elsif($level !~ /^[0-9]$/) {
+				unshift @_,$level;
+				$level = 0;
+			}
+			push @target,{url=>$q,level=>$level};
+		}
+		else {
+			push @queries,$q;
+		}
+		$q = shift(@_);
+	}
+#	die(join("\n",map {$_->{url}} @target),"\n");
+
+	return @target unless(@queries);
+
 
 	if($self->{USQ}) {
 		my $USQ = $self->{USQ};
-		foreach(@_) {
+		foreach(@queries) {
 			my ($status,@result) = $USQ->query($_);
 			if($status) {
 				foreach my $item (@result) {
@@ -138,14 +162,14 @@ sub query {
 	}
 	if($self->{DB} and @{$self->{DB}}) {
 		foreach my $USD (@{$self->{DB}}) {
-			foreach(@_) {
+			foreach(@queries) {
 				my ($status,@result) = $USD->query($_);
 				push @target,@result if($status);
 			}
 		}
 	}
 	if(!@target) {
-		p_err "Query \"@_\" match nothing!\n";
+		p_err "Query \"@queries\" match nothing!\n";
 	}
 	return @target;
 }
@@ -208,7 +232,7 @@ sub CMD_ACTION {
 		$count++;
 	}
 	my $idx = 0;
-	my $URLRULE = new MyPlace::URLRule::OO('action'=>$cmd,'thread'=>$OPTS{thread});
+	my $URLRULE = new MyPlace::URLRule::OO('action'=>$cmd,'thread'=>$OPTS{thread},'force'=>$OPTS{force});
 	foreach(@request) {
 		$idx++;
 		$_->{progress} = "[$idx/$count]";
@@ -233,7 +257,7 @@ sub CMD_MOVE {
 	foreach(@target) {
 		my $oldname = $_->{name};
 		my $newname = $dst;
-		$self->CMD_ADD($_->{id},$newname,$_->{host});
+		$self->CMD_ADD($newname,$_->{id},$_->{host});
 		if($OPTS{'files'}) {
 			my $src_target = catdir($_->{name},$_->{host},$_->{id});
 			my $dst_target = catdir($dstdir,$_->{host},$_->{id});
@@ -383,26 +407,132 @@ sub CMD_SED {
 	return $EXITVAL;
 }
 
+use MyPlace::URLRule qw/parse_rule apply_rule/;
+use Data::Dumper;
 sub CMD_DUMP {
 	my $self = shift;
 	my @target = @_;
 	foreach(@target) {
-		system("urlrule_dump",$_->{url},($_->{level} || 0));
+		my $rule = parse_rule($_->{url},$_->{level} || 0);
+		my ($status,$r) = apply_rule($rule);
+		print STDERR Data::Dumper->Dump([$rule,$r],[qw/$rule $result/]),"\n";
 	}
 	return $EXIT_CODE{OK};
 }
 
+my %URL_EXPS = (
+	'mm\.taobao\.com'=>[
+		'mm\.taobao\.com\/([^#&?]+)',
+		'$1',undef,'mm.taobao.com',
+	],
+	'(?:www\.)moko\.cc'=>[
+		'(?:www\.)moko\.cc\/([^\/]+)',
+		'$1',undef,'moko.cc',
+	],
+	'tieba\.baidu\.com'=>[
+		'tieba\.baidu\.com\/p\/(\d+)',
+		'$1',undef,'post.tieba.baidu.com|tieba.baidu.com',
+	],
+	'\d+\.qzone\.qq\.com' => [
+		'(\d+)\.qzone\.qq\.com',
+		'$1',undef,'qzone.qq.com',
+	],
+	'home\.51\.com\/' => [
+		'home\.51\.com\/([^\/]+)',
+		'$1',undef,'home.51.com',
+	],
+	'[^\.]+\.taobao\.com' => [
+		'([^\.]+)\.taobao\.com',
+		'$1',undef,'shop.taobao.com',
+	],
+	'[^\.]+\.poco\.cn'=> [
+		'([^\.]+)\.poco\.cn',
+		'$1',undef,'poco.cn',
+	],
+);
+
+sub parse_url {
+	my $url = shift;
+	
+	my %result;
+	foreach my $site(keys %URL_EXPS) {
+		next unless($url =~ m/^https?:\/\/$site|^$site/);
+		my($exp,$r1,$r2,$r3) = @{$URL_EXPS{$site}};
+		next unless($exp);
+		if($url =~ m/https?:\/\/$exp/) {
+			$result{profile} = eval("\"$r1\"") if($r1);
+			$result{uname} = eval("\"$r2\"") if($r2);
+			$result{host} = eval("\"$r3\"") if($r3);
+			last;
+		}
+	}
+	return 1,\%result if(%result);
+	if($url =~ m/^http/) {
+		require MyPlace::URLRule;
+		my $rule = MyPlace::URLRule::parse_rule($url,":info");
+		my ($status,$result) = apply_rule($rule);
+		if($status and $result->{profile}) {
+			return 1,$result;
+		}
+		else {
+			return 0,"Error: failed extract information from URL <$url>";
+		}
+	}
+	return 1,\%result;
+}
 
 sub CMD_ADD {
 	my $self = shift;
 	my $OPTS = $self->{OPTS};
-	my $id = shift;
 	my $name = shift;
+	my $id = shift;
 	my $host = shift(@_) || $OPTS->{hosts} || $OPTS->{db};
 	my $exitval = 0;
-	
+
+	if(!$id) {
+		$id = $name;
+		$name = '';
+	}
+	my ($r,$result) = parse_url($id);
+	if($r) {
+		if($result->{profile}) {
+			p_msg "ID => $result->{profile}\n";
+			$id = $result->{profile};
+		}
+		if($result->{uname} and !$name) {
+			p_msg "NAME => $result->{uname}\n";
+			$name = $result->{uname};
+		}
+		if($result->{host} and !$host) {
+			p_msg "HOST => $result->{host}\n";
+			$host = $result->{host};
+			$OPTS->{hosts} = $host if(!$OPTS->{hosts});
+		}
+	}
+	else {
+		die($result . "\n");
+	}
+
 	if(defined $OPTS->{hosts}	or defined $OPTS->{all}) {
 		$OPTS->{hosts} = $host if($host);
+	}
+	if(!defined $OPTS->{hosts}) {
+		die("Error <HOSTS> not defined\n");
+	}
+	if($OPTS->{follow}) {
+		my @hosts;
+		foreach my $hostname (split(/\s*,\s*/,$OPTS->{hosts})) {
+			push @hosts,$hostname;
+			my $f = "sites/$hostname/follows.txt";
+			foreach($f,"follows/$hostname/follows.txt") {
+				$f = $_ if(-f $_);
+			}
+			push @hosts,$f;
+		}
+		$OPTS->{hosts} = join(",",@hosts);
+	}
+	if($OPTS->{reposter}) {
+		$name = '#Reposter/' . $name if($name);
 	}
 	$self->DB_INIT();
 
@@ -413,8 +543,7 @@ sub CMD_ADD {
 		 if($count) {
 			 $self->{USQ}->save();
 		 }
-		 $exitval = $count > 0 ? 0 : 1;
-
+		 $exitval = $count > 0 ? $self->EXIT_CODE('OK') : $self->EXIT_CODE('IGNORED');
 	}
 	if($self->{DB} and @{$self->{DB}}) {
 		foreach my $USD (@{$self->{DB}}) {
@@ -464,7 +593,7 @@ sub MAIN {
 	}
 
 	if($CMD eq 'HELP') {
-		exit 0;
+		return $self->USAGE;
 	}
 	elsif($CMD  eq 'MOVE') {
 		$self->{OPTS}->{overwrite} = 1;
@@ -491,6 +620,40 @@ sub MAIN {
 	}
 	
 	my @queries =  @_;
+
+	if($OPTS->{input}) {
+		p_msg "Read inputs from $OPTS->{input} ...";
+		if($OPTS->{input} eq '-') {
+			while(<STDIN>) {
+				chomp;
+				#p_msg "Add query: $_\n";
+				next unless($_);
+				push @queries,$_;
+			}
+			print STDERR "\t[OK]\n";
+		}
+		elsif(-f $OPTS->{input}) {
+			if(open my $FINPUT,"<",$OPTS->{input}) {
+				while(<$FINPUT>) {
+					chomp;
+					#p_msg "Add query: $_\n";
+					next unless($_);
+					push @queries,$_;
+				}
+				close $FINPUT;
+				print STDERR "\t[OK]\n";
+			}
+			else {
+				p_err "\n\tError reading $OPTS->{input}: $!\n";
+				return $self->EXIT_CODE("ERROR");
+			}
+		}
+		else {
+			p_err "\n\tError, File not exsits: $OPTS->{input}\n";
+			return $self->EXIT_CODE("ERROR");
+		}
+	}
+
 	my @args;
 
 	if($CMD eq 'MOVE') {
@@ -502,7 +665,7 @@ sub MAIN {
 		my @files = $self->dbfiles;
 		return $self->CMD_SED(\@_,@files);
 	}
-
+#	print STDERR join(", ",@queries);
 	my @target = $self->query(@queries);
 	if(!@target) {
 		p_msg "Nothing to do\n";
