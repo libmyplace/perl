@@ -12,6 +12,7 @@ BEGIN {
 }
 use File::Spec;
 use MyPlace::Script::Message;
+use MyPlace::Escape qw/js_escape js_unescape/;
 use MyPlace::Program::Download;
 use base 'MyPlace::Program';
 
@@ -22,25 +23,27 @@ our @OPTIONS = qw/
 	manual|man
 	verbose|v
 	log|l
+	no-hashdb|nhd
 /;
 
 
 my $VERBOSE;
 my $SCRIPTDIR;
-
+my %GLOBAL_OPTIONS;
 
 our @SITES = (
 	#http://www.520bt.com/Torrent/:HASH:
 	#http://torcache.net/torrent/:HASH:.torrent	
 	#http://torrage.ws/torrent/:HASH:.torrent
-	#http://torrentproject.se/torrent/:HASH:.torrent
+	#https://torrage.ws/torrent/:HASH:.torrent
+	#https://torrentproject.se/torrent/:HASH:.torrent
 	qw{
+		http://www.mp4ba.com/down.php?date=1422367802&hash=:HASH:
 		http://www.sobt.org/Tool/downbt?info=:HASH:
 		http://torcache.net/torrent/:HASH:.torrent
 		http://www.torrenthound.com/torrent/:HASH:
 		http://torrage.com/torrent/:HASH:.torrent
 		http://zoink.it/torrent/:HASH:.torrent
-		http://www.mp4ba.com/down.php?date=1422367802&hash=:HASH:
 	}
 );
 
@@ -48,7 +51,63 @@ sub error_no {
 	return MyPlace::Program::EXIT_CODE(@_);
 }
 
-sub checktype {
+my $HASHDB_FILE = 'HASH.lst';
+my %HASHDB;
+my $HASHDB_FO;
+sub check_hash {
+	my $hash = shift;
+	my $title = shift;
+	my $opts = shift;
+	$opts = {} unless($opts);
+
+	if($GLOBAL_OPTIONS{'no-hashdb'}) {
+	}
+	elsif(!$HASHDB_FO) {
+		app_warning("Opening database: <$HASHDB_FILE>\n");
+		if(open FI,'<',$HASHDB_FILE) {
+			foreach(<FI>) {
+				chomp;
+				next unless($_);
+				my($k1,$k2) = split(/\s*\t\s*/,$_);
+				$HASHDB{$k1} = $k2 || '';
+			}
+			close FI;
+		}
+#		use MyPlace::Data::Dumper;print STDERR (dumpdata(\%HASHDB,'$HASHDB'));
+		open $HASHDB_FO,">>",$HASHDB_FILE or warn("Error opening $HASHDB_FILE: $!\n");
+	}
+	if($opts->{read}) {
+		return $HASHDB{$hash};
+	}
+	elsif($GLOBAL_OPTIONS{'no-hashdb'}) {
+		return 1;
+	}
+	elsif(defined $HASHDB{$hash}) {
+		app_message "[HASHDB] $hash => \"$HASHDB{$hash}\"\n";
+		return undef;
+	}
+	elsif($opts->{write}) {
+		print $HASHDB_FO $hash, ($title ? "\t$title\n" : "\n");
+		return 1;
+	}
+	else {
+		return 1;
+	}
+}
+
+sub write_hash {
+	return check_hash($_[0] || '',$_[1] || '',{write=>1});
+}
+
+sub read_hash {
+	return check_hash($_[0] || '',$_[1] || '',{read=>1});
+}
+
+sub DESTORY {
+	close $HASHDB_FO;
+}
+
+sub check_type {
 	my $output = shift;
 	return unless(-f $output);
 	my $type = `file -b --mime-type -- "$output"`;
@@ -58,10 +117,14 @@ sub checktype {
 	}
 	return undef,$type;
 }
+
 sub normalize {
 	my $_ = $_[0];
 	if($_) {
-		s/[\?\*\/:\\]/ /g;
+		$_ = js_unescape($_) if(m/%[^%]+%[^%]+%[^%]+/);
+		s/_*[\?\*\/:\\+]_*/_/g;
+		s/_*-_*/_/g;
+		s/__+/_/g;
 	}
 	return $_;
 }
@@ -71,7 +134,7 @@ sub download {
 	my $REF = shift(@_) || $URL;
 	$DL ||= MyPlace::Program::Download->new('--compressed','--quiet','--maxtry',1);
 	if($DL->execute("-r",$REF,"-u",$URL,"-s",$output) == 0) {
-		my ($ok,$type) = checktype($output);
+		my ($ok,$type) = check_type($output);
 		if($ok) {
 			return 1;
 		}
@@ -82,7 +145,6 @@ sub download {
 	}
 	return undef;
 }
-
 
 sub download_torrent {
 	my $URI = shift;
@@ -101,17 +163,29 @@ sub download_torrent {
 	if($URI =~ m/^([\dA-Za-z]+)$/) {
 		$hash = uc($1);
 	}
-	elsif(uc($URI) =~ m/^MAGNET:\?.*XT=URN:BTIH:([\dA-Z]+)/) {
+	elsif($URI =~ m/^magnet:\?/i) {
+		my $ul = uc($URI);
+		if($ul =~ m/^MAGNET:\?.*XT=URN:BTIH:([\dA-Z]+)/) {
 			$hash = $1;
+		}
+		if((!$title) and $URI =~ m/&dn=([^&]+)/) {
+			$title = $1;
+		}
 	}
 	else {
 		app_error "No HASH information found in $URI\n";
 		return error_no("ERROR");
 	}
-	
+
+	if(!check_hash($hash)) {
+		app_warning "Ignored, [$hash] exists in DB <$HASHDB_FILE>\n";
+		return error_no("IGNORED");
+	}
+
 	my $output = "";
 	
 	if(!$filename) {
+		$title = read_hash($hash) unless($title);
 		if(!$title) {
 			my $getor = File::Spec->catfile($SCRIPTDIR,"gettorrent_title.pl");
 			$getor =  File::Spec->catfile($SCRIPTDIR,"gettorrent_title") unless(-f $getor);
@@ -121,7 +195,9 @@ sub download_torrent {
 			else {
 				$title = `gettorrent_title "$hash"`
 			}
-			chomp($title) if($title);
+			if($title) {
+				chomp($title);
+			}
 		}
 		$filename = ($title ? normalize($title) . "_" : "") . $hash;
 	}
@@ -136,6 +212,8 @@ sub download_torrent {
 	}
 
 	app_message "\n$URI\n";
+
+
 	if($URI =~ m/^(magnet:[^\t]+)/) {
 		$URI =~ s/&amp;/&/g;
 		app_message2 "Save magnet uri:\n  =>$filename.txt\n";
@@ -150,8 +228,9 @@ sub download_torrent {
 	}
 	app_message2 "Save torrent file:\n  =>$filename.torrent\n";
 	$output .= ".torrent";
-	if(checktype($output)) {
+	if(check_type($output)) {
 		app_warning "Error, File already downloaded, Ignored\n";
+		write_hash($hash,$title);
 		return error_no("IGNORED");
 	}
 	foreach my $site (@SITES) {
@@ -166,6 +245,7 @@ sub download_torrent {
 		if(download($output,$url)) {
 			color_print('GREEN',"  [OK]\n");
 			color_print('GREEN', "[OK]\n\n");
+			write_hash($hash,"$title\t$url");
 			return error_no("OK");
 		}
 		else {
@@ -190,6 +270,7 @@ sub OPTIONS {
 sub MAIN {
 	my $self = shift;
 	my $OPTS = shift;
+	%GLOBAL_OPTIONS = %$OPTS;
 	my @argv = @_;
 	$VERBOSE = $OPTS->{'verbose'};
 	$SCRIPTDIR = $0;
