@@ -158,6 +158,9 @@ sub applyRule {
 	if(!$handler) {
 		return 0,{error=>"No handler found for $rule->{url}"},$rule;
 	}
+	elsif($handler->{error}) {
+		return 0, {error=>$handler->{error}},$rule;
+	}
 	if($request->{options}) {
 		$handler->{options} = $request->{options};
 	}
@@ -398,6 +401,14 @@ sub autoApply {
 			else {
 				foreach my $req (@requests) {
 					my(undef,@r) = $self->processNextLevel($req);
+					if($rule->{url} =~ m/weibo\.com/) {
+						my $sec = 10;
+						app_error(
+							$self->{msghd},
+							"Program will sleep for $sec seconds, avoiding blocked by weibo.com\n"
+						);
+						sleep $sec;
+					}
 					if(@r) {
 						push @DATAS,@r;
 					}
@@ -814,16 +825,14 @@ sub do_action {
 	}
     elsif($action) {
 		app_prompt($self->{msghd} . 'Action',"$action\n");
-        my $childpid = open FO,"|-",$action;
-#		print STDERR "Childpid:$childpid\n";
-		if($childpid) {
-			print FO join("\n",@{$data}),"\n";
-			close FO;
-			waitpid($childpid,0);
-		}
-		else {
-			exit 0;
-		}
+	        if(open FO,"|-",$action) {
+				print FO join("\n",@{$data}),"\n";
+				close FO;
+			}
+			else {
+				app_error($self->{msghd} . "Error process action <$action> : $!\n");
+				return;
+			}
     }
     else {
         print $_,"\n" foreach(@{$data});

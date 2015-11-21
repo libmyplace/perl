@@ -51,6 +51,16 @@ sub p_prompt {
 	&p_msg(@_) if(@_);
 }
 
+sub set_prompt {
+	my $self = shift;
+	$MSG_PROMPT = shift;
+}
+
+sub get_prompt {
+	my $self = shift;
+	return $MSG_PROMPT;
+}
+
 sub p_msg {
 	print STDERR "  ",@_;
 }

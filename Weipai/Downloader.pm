@@ -12,17 +12,20 @@ BEGIN {
 }
 use base 'MyPlace::Program';
 use MyPlace::Program::Download;
+use MyPlace::Weipai qw/get_url build_url/;
 
 my $DOWNLOADER;
 my %VIDEO_TYPE = (
 	'.mp4'=>'/500k.mp4',
 	'.mov'=>'.mov',
 	'.flv'=>'.flv',
+	'.ts'=>'./500k.ts',
 );
 
 
 
 my @URL_RECORD;
+my %URLID;
 
 my $cookie = $ENV{HOME} . "/.cookies.weipai.dat";
 sub init {
@@ -37,6 +40,28 @@ sub init {
 	}
 }
 
+sub get_url_id {
+	my $_ = shift;
+	my $ext = shift;
+	if(!$ext) {
+		$ext = $_;
+	}
+	$ext =~ s/^.*\///;
+	$ext =~ s/^.*\.//;
+	my $id = $_;
+	my $idexp = '[A-Za-z0-9\-]+';
+	if(m{/\d{6}/\d\d/\d\d/($idexp)}) {
+		$id = $1;
+	}
+	elsif(m/weipai.cn\/video\/uuid\/($idexp)/) {
+		$id = $1;
+	}
+	elsif(m/weipai.cn\/video\/($idexp)/) {
+		$id = $1;
+	}
+	return "$ext:$id";
+}
+
 sub hist_check_url {
 	my $url = shift;
 	my $basename = shift;
@@ -47,53 +72,33 @@ sub hist_check_url {
 			foreach(<FI>) {
 				chomp;
 				push @URL_RECORD,$_;
+				$URLID{get_url_id($_)} = 1;
 			}
 			close FI;
 		}
 	}
 	return 0 unless($url);
-
-	foreach(@URL_RECORD) {
-		last if($dup);
-		my $len2 = length($_);
-		foreach my $suffix (@$suffixs) {
-			my $eurl = $url . $suffix;
-			my $len1 = length($eurl);
-			#print STDERR "\n";
-			#print STDERR "$eurl\n";
-			#print STDERR "$_\n";
-			#print STDERR substr($_,0,$len),"\n";
-			#print STDERR "\n";
-			if($len2 < $len1) {
-				next;
-			}
-			elsif($len2 > $len1) {
-				my $lastc = substr($_,$len1,1);
-				if(($lastc eq ' ') || ($lastc eq "\t") || ($lastc eq "\n")) {
-				}
-				else {
-					next;
-				}
-				if(!($eurl eq substr($_,0,$len1))) {
-					next;
-				}
-			}
-			elsif(!($eurl eq $_)) {
-				next;
-			}
-
-			print STDERR "  Ignored, \"$eurl\"\n\tRecord in file <URLS.txt>\n";
-			$dup = 1;
-			last;
-		}
-		last if($dup);
+	
+	if(!$suffixs) {
+		$suffixs = [$url];
 	}
-	return 2 if($dup);
+	if($URLID{get_url_id($url)}) {
+		print STDERR "  Ignored, \"$url\"\n\tRecord in file <URLS.txt>\n";
+		return 2;
+	}
+	foreach my $ext(@$suffixs) {
+		if($URLID{get_url_id($url,$ext)}) {
+			print STDERR "  Ignored, \"$url\"\n\tRecord in file <URLS.txt>\n";
+			return 2;
+		}
+	}
 	return 0;
 }
 
 sub hist_add_url {
-	push @URL_RECORD,join("\t",@_);
+	my $url = shift;
+	push @URL_RECORD,join("\t",$url,@_);
+	$URLID{get_url_id($url)} = 1;
 }
 
 sub hist_save {
@@ -114,8 +119,15 @@ sub _parse_suffix {
 		if($url =~ m/\.jpg$/) {
 			$r = [qw/.mov.3in1.jpg .jpg .1.jpg .2.jpg .p.1.jpg .p.2.jpg/];
 		}
+		elsif($url =~ m/\.m3u8$/) {
+			$r = [qw/.ts .flv .mov .mp4/];
+		}
+		elsif($url =~ m/\/video\/[^\/]+$/) {
+			$r = [qw/.ts .flv .mov .mp4/];
+		}
 		else {
-			$r = [qw/\/500k.ts .flv .mov \/500k.mp4/];
+			#$r = [qw/\/500k.ts/];
+			$r = [qw/\/500k.ts .flv .mov .mp4/];
 		}
 	}
 	else {
@@ -162,48 +174,7 @@ sub download_urls {
 	hist_save() if($hist);
 	return 0;
 }
-our @DOMAINS = (
-	['v.weipai.cn','oldvideo.qiniudn.com'],
-	['aliv3.weipai.cn', 'aliv.weipai.cn'],
-);
 
-sub DUP_URL {
-	my $url = shift;
-	my @r;
-	my $lurl = $url;
-	my $prefix;
-	my $domain;
-	my $suffix;
-	if($lurl =~ m/^([a-z]+:\/\/)([^\/]+)(.*)$/) {
-		$prefix = $1;
-		$domain = lc($2);
-		$suffix = $3;
-	}
-	else {
-		return ($url);
-	}
-	foreach (@DOMAINS) {
-		my $match = 0;
-		foreach my $d(@$_) {
-			if(lc($d) eq $domain) {
-				$match = 1;
-				last;
-			}
-		}
-		if($match) {
-			foreach my $d(@$_) {
-				push @r, $prefix . $d . $suffix;
-			}
-			last;
-		}
-	}
-	if(@r) {
-		#	print STDERR "[DUPURL] $url =>\n";
-		#print STDERR "\t" . join("\n\t",@r) . "\n";
-		return @r;
-	}	
-	return ($url);
-}
 
 sub _preprocess {
 	my $OPTS = shift;
@@ -217,18 +188,20 @@ sub _preprocess {
 
 	$suffix = _parse_suffix($url,$suffix);
 
-	my $noext = qr/(?:\/500k\.ts|\/500k\.mp4|\.mov\.l\.jpg|\.mov\.3in1\.jpg|\.jpg|\.\d\.jpg|\.mov|\.mp4|\.flv|\.f4v)$/o;
+	my $noext = qr/(?:\/500k\.ts|\/500k\.mp4|\.mov\.l\.jpg|\.mov\.3in1\.jpg|\.jpg|\.\d\.jpg|\.mov|\.mp4|\.flv|\.f4v|\.ts)$/o;
 
 	$url =~ s/$noext//;
 	$url =~ s/\/thumbnail\/.*\/video\//\/video\//;
-
 	if(!$basename) {
 		$basename = $url;
 		$basename =~ s/^.+\/(\d+)\/(\d+)\/(\d+)\/([^\/]+)$/$1$2$3_$4/;
+		$basename =~ s/[\?#].*//;
 	}
 	else {
 		$basename =~ s/$noext//;
 	}
+	$basename =~ s/^.*\///;
+	$basename =~ s/\.m3u8$//;
 	if($hist) {
 		return undef if(hist_check_url($url,$basename,$suffix));
 	}
@@ -265,15 +238,14 @@ sub _preprocess {
 		my %DONE;
 		foreach (<FI>) {
 			chomp;
-			s/\t.*$//;
-			@DONE{(DUP_URL($_))} = (1,1,1,1,1);
+			$DONE{get_url_id($_)} = 1;
 		}
 		close FI;
 		if(%DONE) {
 			foreach my $suf(@$suffix) {
 				my $ext = $exts->{$suf};
 				my $input = $url . $suf;
-				if($DONE{$input}) {
+				if($DONE{get_url_id($input,$ext)}) {
 					print STDERR "[EXIST]\n  Ignored, url recored in <.mtm/done.txt>\n   $input\n";
 					return undef;
 				}
@@ -305,43 +277,173 @@ sub _download {
 	}
 	return undef;
 }
+sub get_video_url {
+	my $url = shift;
+	my $vid = $url;
+	$vid =~ s/.*\/video\///;
+	$vid =~ s/[\?#].*//;
+	$vid =~ s/\/.*//;
+	
+	my $data = get_url(build_url('play',$vid),'-v');
+	my $playurl;
+	if($data =~ m/"video_url"\s*:\s*"([^"]+)/) {
+		$playurl = $1;
+	}
+	elsif($data =~ m/'video_url'\s*:\s*'([^']+)/) {
+		$playurl = $1;
+	}
+	else {
+		print STDERR "Error retriving info: $url\n";
+		return undef;
+	}
+	$playurl =~ s/\\//g;
+	return $playurl;
+}
+
+sub _download_video {
+	my $url = shift;
+	my $vid = $url;
+	$vid =~ s/.*\/video\///;
+	$vid =~ s/[\?#].*//;
+	$vid =~ s/\/.*//;
+	
+	my $data = get_url(build_url('play',$vid),'-v');
+	my $playurl;
+	if($data =~ m/"video_url"\s*:\s*"([^"]+)/) {
+		$playurl = $1;
+	}
+	elsif($data =~ m/'video_url'\s*:\s*'([^']+)/) {
+		$playurl = $1;
+	}
+	else {
+		print STDERR "Error retriving info: $url\n";
+		return undef;
+	}
+	$playurl =~ s/\\//g;
+	my($input,$output) = _download_m3u8($playurl,@_);
+	if($input and $output) {
+			&hist_add_url($url,$output);
+			&hist_save();
+	}
+	return $input,$output;
+#	$DOWNLOADER = $DOWNLOADER || new MyPlace::Program::Download;
+}
+
+sub _download_m3u8 {
+	my ($url,$basename,$suffix,$exts) = @_;
+	$DOWNLOADER = $DOWNLOADER || new MyPlace::Program::Download;
+	
+	my $f_m3u = $basename . ".m3u8";
+	
+	if(!-f $f_m3u) {
+		$DOWNLOADER->execute("--url",$url,"--saveas",$f_m3u,"--maxtry",4);
+		return undef,$f_m3u unless(-f $f_m3u);
+	}
+	if(!open FI,"<:utf8",$f_m3u) {
+		print STDERR "Error opening file $f_m3u: $!\n";
+		return undef,$f_m3u;
+	}
+	my @urls;
+	while(<FI>) {
+		chomp;
+		push @urls,$_ if(m/^http:\/\//);
+	}
+	close FI;
+	unlink $f_m3u;
+	my $idx = 0;
+	my $count = @urls;
+	my @data;
+	my @files;
+	foreach(@urls) {
+		$idx++;
+		my $output = $basename . '_' .  $idx . '.ts';
+		print STDERR "  [$idx/$count] ";
+		$DOWNLOADER->execute("--url",$_,"--saveas",$output,"--maxtry",4);
+		if(-f $output) {
+			open FI,'<:raw',$output;
+			push @data,<FI>;
+			close FI;
+			push @files,$output;
+		}
+		else {
+			print STDERR "Download playlist falied\n";
+			return undef,$output;
+		}
+	}
+	if(@data) {
+		open FO,">:raw",$basename . ".ts" or return;
+		print FO @data;
+		close FO;
+		print STDERR "Playlist saved to : $basename" . ".ts\n";
+		unlink @files;
+	}
+	return $url,$basename . ".ts";
+}
 
 sub download {
 	#$OPTS->{history},$OPTS->{overwrite},$OPTS->{exts}
 	my $OPTS = shift;
 	my @args = _preprocess($OPTS,@_);
 	
+	my ($exit,$input,$output);
+	
+
+
 	if(@args && $args[0]) {
 		if($OPTS->{"no-download"}) {
-			return MyPlace::Program::EXIT_CODE("UNKNOWN");
-		}
-		use Cwd qw/getcwd/;
-		my $PWD = getcwd;
-		$PWD =~ s/\/+$//;
-		$PWD =~ s/^.*\/([^\/]+\/[^\/]+\/[^\/]+)$/$1/;
-		print STDERR "\n$PWD/";
-		my ($input,$output) = _download(@args);
-		if($input) {
-			&hist_add_url($input,$output);
-			&hist_save();
-
-			#SUCCESSED
-			return 0;
-		}
-		else {
-
-			#FAILED;
-			return 11;
+			$exit = MyPlace::Program::EXIT_CODE("UNKNOWN");
 		}
 	}
 	else {
-
-		#IGNORED
-		return 12;
+		$exit = 12;
 	}
+	return $exit if(defined $exit);
 
-	#FAILED
-	return 11;
+	use Cwd qw/getcwd/;
+	my $PWD = getcwd;
+	$PWD =~ s/\/+$//;
+	$PWD =~ s/^.*\/([^\/]+\/[^\/]+\/[^\/]+)$/$1/;
+	print STDERR "\n$PWD/";
+	if($args[0] =~ m/weipai\.cn\/video\/[^\/]+$/) {
+		print STDERR "\n";
+		my $n_url = get_video_url($args[0]);
+		print STDERR " => $n_url\n";
+		return 11 unless($n_url);
+		my $n_basename = $args[1] || undef;
+		$exit = download($OPTS,$n_url,$n_basename);
+		if($exit == 0) {
+			$input = $args[0];
+			$output = $args[1];
+		}
+	}
+	elsif($args[0] =~ m/\.m3u8$/) {
+		print STDERR "\n";
+		($input,$output) = _download_m3u8(@args);
+	}
+	else {
+		($input,$output) = _download(@args);
+	}
+	
+	if($input and $output) {
+		&hist_add_url($input,$output);
+		&hist_save();
+
+		#SUCCESSED
+		$exit = 0;
+	}
+	elsif($output) {
+		#UNKNOWN / NO-DOWNLOAD
+		$exit = MyPlace::Program::EXIT_CODE("UNKNOWN");
+	}
+	elsif($input) {
+		#IGNORED
+		$exit = 12;
+	}
+	else {
+		#FAILED;
+		$exit = 11;
+	}
+	return $exit;
 }
 
 sub OPTIONS {

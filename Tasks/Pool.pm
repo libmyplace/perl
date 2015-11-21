@@ -163,7 +163,7 @@ sub _collect_data {
 	elsif($data =~ m/^file:\/\/(.+)$/) {
 		push @r,_collect_datafile($def,$1);
 	}
-	elsif($def->{ignore} || $data =~ m/$def->{ignore}/) {
+	elsif($def->{ignore} and $data =~ m/$def->{ignore}/) {
 	}
 	elsif($data =~ m/\t/) {
 		push @r,[split(/\s*\t\s*/,$data)];

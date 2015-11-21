@@ -28,6 +28,11 @@ my %CHANNEL = (
 );
 no warnings;
 
+sub prompt {
+	my $a = shift;
+	$prefix = $a if(defined $a);
+}
+
 sub color {
 	if($ENV{TERM} && $ENV{TERM} ne "dump") {
 		goto &Term::ANSIColor::color;

@@ -97,6 +97,7 @@ sub query_repos {
 		foreach(keys %{$projects}) {
 			if(($_ =~ m/$exp/) || ($projects->{$_}->{name} =~ m/$exp/)) {
 				push @names, [$_,$target];
+				$found = 1;
 			}
 		}
 	}	
@@ -180,10 +181,41 @@ sub from_strings {
 
 sub translate_url {
     my $url = shift;
-    my $path = shift;
+    my $names = shift;
 	my $id = shift;
 	my $root;
 	my $leaf;
+	my $path;
+	print STDERR "Translate from $url\n";	
+	if($names->{fullname}) {
+		$path = $names->{fullname};
+	}
+	elsif(index($url,'#1-#2')>=0 
+	   or index($url,'#1.#2')>=0
+	   or index($url,'#1_#2')>=0) {
+		if($names->{group} and ($names->{group} eq $names->{name})) {
+			$path = $names->{name};
+		}
+		elsif($names->{group}) {
+			$path = $names->{group} . '/' . $names->{name};
+		}
+		else {
+			$path = $names->{name};
+		}
+		
+	}
+	elsif(index($url,'#1')>=0 and index($url,'#2')>=0) {
+		$path = $names->{name};
+		$path = $names->{group} . '/' . $path if($names->{group});
+	}
+	elsif($names->{group}) {
+		$path = $names->{group} . '-' . $names->{name};
+	}
+	else {
+		$path = $names->{name};
+	}
+	$path = $names->{entry} . $path if($names->{entry});
+
 	if($path =~ m/^([^\/]+)\/(.+)$/) {
 		$root = $1;
 		$leaf = $2;
@@ -213,6 +245,7 @@ sub translate_url {
 	if($url and $id) {
 		$url =~ s/:\/\//:\/\/$id\@/;
 	}
+	print STDERR "\t To $url\n";	
     return $url;
 }
 
@@ -237,24 +270,27 @@ sub parse_url {
 	}
 	my $host;
 	my $service;
-	my $entry;
+	my %names = (
+		'name'=>$name || $project->{name},
+		'group'=>$project->{group},
+	);
 	if($template =~ m/^\s*([^\.\/]+)\.([^\/]+)\/(.*?)\s*$/) {
 		$host = $self->{hosts}->{$1};
 		$service = $2;
-		$entry = $3;
+		$names{fullname} = $3;
 	}
 	elsif($template =~ m/^\s*([^\/]+)\/(.*?)\s*$/) {
 		$host = $self->{hosts}->{$1};
-		$entry = "";
+		$names{fullname} = $2;
 	}
 	if($template =~ m/\/$/) {
-		my $default_entry = $name;
+		my $default_entry = '';
 		if($project->{default_entry}) {
 			$default_entry = $project->{default_entry};
 		}
 		elsif(ref $host) {
 			if($host->{map} and $host->{map} eq 'localname') {
-				$default_entry = $project->{localname};
+				$names{name} = $project->{localname} if($project->{localname});
 			}
 			for($host->{name},$host->{$service}->{default}){
 				if($_ && $project->{$_}) {
@@ -263,25 +299,25 @@ sub parse_url {
 				}
 			}
 		}
-		$entry .= $default_entry;;
+		$names{fullname} = $default_entry;
 	}
 	my ($push,$pull,$type);
 	if($host) {
 		if(ref $host->{$service} and $host->{$service}->{write}) {
-			$push = translate_url($host->{$service}->{write},$entry,$user);
+			$push = translate_url($host->{$service}->{write},\%names,$user);
 		}
 		elsif($host->{write}) {
-			$push = translate_url($host->{write},$entry,$user);
+			$push = translate_url($host->{write},\%names,$user);
 		}
 		elsif($host->{$service}) {
-			$push = translate_url($host->{$service},$entry,$user);
+			$push = translate_url($host->{$service},\%names,$user);
 		}
 
 		if(ref $host->{$service} and $host->{$service}->{read}) {
-			$pull = translate_url($host->{$service}->{read},$entry,$user);
+			$pull = translate_url($host->{$service}->{read},\%names,$user);
 		}
 		elsif($host->{read}) {
-			$pull = translate_url($host->{read},$entry,$user);
+			$pull = translate_url($host->{read},\%names,$user);
 		}
 		elsif($push) {
 			$pull = $push;
@@ -293,7 +329,7 @@ sub parse_url {
 	}
 
 	if(!$push) {
-		$push = $pull =  translate_url($template,$entry,$user);
+		$push = $pull =  translate_url($template,\%names,$user);
 	}
 	if(!$type) {
 		$type = $project->{type};
@@ -342,7 +378,7 @@ sub new_repo {
 		foreach(@{$project->{"mirrors"}}) {
 			next unless($_);
 			my $url = $self->parse_url($r{name},$_,\%r);
-			push @{$r{$url->{type}}},$url;
+			push @{$r{$url->{type}}},$url if($url);
 		}
 	}
     return \%r;

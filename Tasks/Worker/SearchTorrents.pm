@@ -133,6 +133,12 @@ sub prog_search_torrents {
 		elsif($l eq '--download') {
 			$OPTS{download} = 1;
 		}
+		elsif($l eq '--nsfw') {
+			$OPTS{group} = 'NSFW';
+		}
+		elsif($l eq '--safe') {
+			$OPTS{group} = 'SAFE';
+		}
 		elsif($l eq '-d') {
 			$OPTS{download} = 1;
 		}
@@ -151,6 +157,7 @@ sub prog_search_torrents {
 
 	my @prefix = ('search_torrents');
 	push @prefix,'-d' if($OPTS{download});
+	push @prefix,'-g',$OPTS{group} if($OPTS{group});
 
 	if($OPTS{new}) {
 		my @keywords = read_keywords($rulefile);
@@ -204,7 +211,7 @@ sub prog_search_torrents {
 			$filename = $2;
 		}
 		else {
-			$filename = "search.$rulename";
+			$filename = $rulename;
 		}
 
 		my %pool =  (
@@ -229,8 +236,8 @@ sub work {
 		$rulename = $1;
 		$rulefile = "../$2.rule";
 	}
-	my $WD = $self->{target_dir} || $rulename;
-	my $ERROR_WD = $self->set_workdir($task,$rulename);
+	my $WD = $self->{target_dir} || $task->{target_dir} || $rulename;
+	my $ERROR_WD = $self->set_workdir($task,$WD);
 	return $ERROR_WD if($ERROR_WD);
 	if(! -f $rulefile) {
 		return $self->error($task,"File not accessible: $rulefile");
@@ -240,11 +247,17 @@ sub work {
 	my %TASK_OPTS = ($task->{options} ? %{$task->{options}} : ());
 	my @opts;
 	my %OPTS;
-	foreach ('no-download','engine') {
+	foreach ('no-download','engine','nsfw','safe') {
 		$OPTS{$_} = defined $TASK_OPTS{$_} ? $TASK_OPTS{$_} : $WORKER_OPTS{$_};
 	}
 	push @opts,'-d' unless($OPTS{'no-download'});
 	push @opts,'-e',$OPTS{engine} if($OPTS{'engine'});
+	if($OPTS{'nsfw'}) {
+		push @opts,'--nsfw';
+	}
+	elsif($OPTS{'safe'}) {
+		push @opts,'--safe';
+	}
 	my $exit =  prog_search_torrents($rulefile,@opts,@_);
 	if($exit == 0) {
 		return $TASK_STATUS->{FINISHED},'OK';

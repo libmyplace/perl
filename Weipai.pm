@@ -8,13 +8,14 @@ BEGIN {
     $VERSION        = 1.00;
     @ISA            = qw(Exporter);
 	#@EXPORT		    = qw(profile user videos home square get_likes fans follows video);
-    @EXPORT_OK      = qw(build_url profile user videos home square get_likes fans follows video get_url);
+    @EXPORT_OK      = qw(extract_title build_url profile user videos home square get_likes fans follows video get_url safe_decode_json);
 }
 
 our $HOST = 'http://w1.weipai.cn';
 our %URLSTPL = (
 	profile=>'/get_profile?&weipai_userid=$1',
 	user=>'/home_user?relative=after&user_id=$1&day_count=$2&cursor=$3',
+	videos=>'/home_user?relative=after&user_id=$1&day_count=$2&cursor=$3',
 	video=>'/user_video_list?blog_id=$1',
 	my_home=>'/my_follow_user_video_list?relative=after&user_id=$1&count=$2&cursor=$3',
 	square=>'/top_video?relative=after&type=$1&count=$2&cursor=$3',
@@ -56,25 +57,26 @@ my $CURL = MyPlace::Curl->new(
 );
 my @CURLOPT = (
 	'--compressed',
-	'-H','User-Agent: Dalvik/1.6.0 (Linux; U; Android 4.2.1; C3 Build/JOP40D)',
 	'-H','Phone-Type: android_VIVO_4.4.2',
-	'-H','os: android',
-	'-H','Channel: weipai',
-	'-H','App-Name: weipai',
-	'-H','Api-Version: 8',
-	'-H','Client-Version: 0.99.9.6',
-	'-H','Device-Uuid: 33f4423796f37eb3ed49cadeeb1b85616db264a6',
-	'-H','Weipai-Token: 54ea2c8fc000d',
+	'-H','Accept-Encoding: gzip',
+	'-H','Weipai-Token: 55fda4ca13ca59.41317149',
 	'-H','Weipai-UserId: 508775398134943b58000051',
 	'-H','Phone-Number: ',
-	'-H','Push-Id: com.weipai.weipaipro',
+	'-H','Latitude: 23.542087',
+	'-H','Longitude: 116.403701',
+	'-H','Api-Version: 8',
+	'-H','Client-Version: 0.99.9.8',
+	'-H','App-Name: weipai',
+	'-H','Device-Uuid: 6747b8883e410ab3e29ae93a143563912dc31fbd',
 	'-H','Kernel-Version: 15',
 	'-H','Com-Id: weipai',
-	'-H','If-Modified-Since: Mon, 04 May 2012 04:11:55 GMT',
-	'-H','Latitude: 23.542081',
-	'-H','Longitude: 116.403559',
-	'-H','Accept-Encoding: gzip',
+	'-H','Push-Id: com.weipai.weipaipro',
+	'-H','os: android',
+	'-H','Channel: weipai',
+	'-H','Connection: Keep-Alive',
+	'-H','User-Agent: Apache-HttpClient/UNAVAILABLE (java 1.4)',
 );
+#LAST HEADER UPDATED 2015/09/20
 
 
 
@@ -108,6 +110,35 @@ sub WRITE_DATABASE {
 	}
 }
 
+sub extract_title {
+	my $title = shift;
+	return unless($title);
+	$title =~ s/\@微拍小秘书//g;
+	$title =~ s/”//g;
+	$title =~ s/<[^.>]+>//g;
+	$title =~ s/\/\?\*'"//g;
+	$title =~ s/&amp;amp;/&/g;
+	$title =~ s/&amp;/&/g;
+	$title =~ s/&hellip;/…/g;
+	$title =~ s/&[^&]+;//g;
+#	$title =~ s/\x{1f60f}|\x{1f614}|\x{1f604}//g;
+#	$title =~ s/[\P{Print}]+//g;
+#	$title =~ s/[^\p{CJK_Unified_Ideographs}\p{ASCII}]//g;
+	$title =~ s/[^{\p{Punctuation}\p{CJK_Unified_Ideographs}\p{CJK_SYMBOLS_AND_PUNCTUATION}\p{HALFWIDTH_AND_FULLWIDTH_FORMS}\p{CJK_COMPATIBILITY_FORMS}\p{VERTICAL_FORMS}\p{ASCII}\p{LATIN}\p{CJK_Unified_Ideographs_Extension_A}\p{CJK_Unified_Ideographs_Extension_B}\p{CJK_Unified_Ideographs_Extension_C}\p{CJK_Unified_Ideographs_Extension_D}]//g;
+#	$title =~ s/[\p{Block: Emoticons}]//g;
+	#print STDERR "\n\n$title=>\n", length($title),"\n\n";
+	$title =~ s/\s{2,}/ /g;
+	$title =~ s/[\r\n\/\?:\*\>\<\|]+/ /g;
+	$title =~ s/_+$//;
+	my $maxlen = 70;
+	if(length($title) > $maxlen) {
+		$title = substr($title,0,$maxlen);
+	}	
+	$title =~ s/^\s+//;
+	$title =~ s/\s+$//;
+	$title = $utf8->encode($title);
+	return $title;
+}
 
 sub get_url {
 	my $url = shift;
@@ -431,6 +462,7 @@ sub get_likes_by {
 	$data->{video_list} ||= $data->{like_video_list};
 	if($data->{video_list}) {
 		foreach(@{$data->{video_list}}) {
+			next unless(ref $_);
 			$_->{video_id} ||= $_->{blog_id};
 			$_->{video_play_url} ||= $_->{video_url};
 		}

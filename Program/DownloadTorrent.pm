@@ -38,14 +38,30 @@ our @SITES = (
 	#https://torrage.ws/torrent/:HASH:.torrent
 	#https://torrentproject.se/torrent/:HASH:.torrent
 	qw{
-		http://www.mp4ba.com/down.php?date=1422367802&hash=:HASH:
-		http://www.sobt.org/Tool/downbt?info=:HASH:
+		post://www.torrent.org.cn/download.php?hash=:HASH:
 		http://torcache.net/torrent/:HASH:.torrent
+		http://torrage.top/torrent/:HASH:.torrent
+		http://www.sobt5.com/Tool/downbt?info=:HASH:
+		http://www.mp4ba.com/down.php?date=1422367802&hash=:HASH:
 		http://www.torrenthound.com/torrent/:HASH:
 		http://torrage.com/torrent/:HASH:.torrent
 		http://zoink.it/torrent/:HASH:.torrent
 	}
 );
+#@SITES = ( 'post://www.torrent.org.cn/download.php?hash=:HASH:',);
+our %SITES2 = (
+	'sobt5.com/m2t'=>sub {
+		my $_ = shift;
+		if(m/^(\w\w).*(\w\w)$/) {
+			return "http://bt.box.n0808.com/$1/$2/$_.torrent";
+		}
+		else {
+			return undef;
+		}
+	},
+);
+
+%SITES2 = ();
 
 sub error_no {
 	return MyPlace::Program::EXIT_CODE(@_);
@@ -64,15 +80,18 @@ sub check_hash {
 	}
 	elsif(!$HASHDB_FO) {
 		app_warning("Opening database: <$HASHDB_FILE>\n");
+		my $count = 0;
 		if(open FI,'<',$HASHDB_FILE) {
 			foreach(<FI>) {
 				chomp;
 				next unless($_);
+				$count++;
 				my($k1,$k2) = split(/\s*\t\s*/,$_);
 				$HASHDB{$k1} = $k2 || '';
 			}
 			close FI;
 		}
+		app_warning("\t$count record read\n");
 #		use MyPlace::Data::Dumper;print STDERR (dumpdata(\%HASHDB,'$HASHDB'));
 		open $HASHDB_FO,">>",$HASHDB_FILE or warn("Error opening $HASHDB_FILE: $!\n");
 	}
@@ -128,12 +147,43 @@ sub normalize {
 	}
 	return $_;
 }
+
+my $MAX_PATH = 206;
+sub short_filename {
+	my $_ = shift;
+	if($_) {
+		if(length($_) > $MAX_PATH) {
+			app_warning("Filename too long, cut it\n");
+			$_ = substr($_,0,$MAX_PATH);
+			print STDERR "  =>$_\n";
+		}
+	}
+	return $_;
+}
 sub download {
 	my $output = shift;
 	my $URL = shift;
 	my $REF = shift(@_) || $URL;
 	$DL ||= MyPlace::Program::Download->new('--compressed','--quiet','--maxtry',1);
-	if($DL->execute("-r",$REF,"-u",$URL,"-s",$output) == 0) {
+	
+	my $postd = shift;
+	if($URL =~ m/^post:\/\/(.+)$/) {
+		$URL = $1;
+		$postd = "";
+		if($URL !~ m/^(?:http:\/\/|https:\/\/|ftp:\/\/)/) {
+			$URL = 'http://' . $URL;
+		}
+		if($URL =~ m/\?([^\?]+)$/) {
+			$postd = $1;
+		}
+	}
+
+	my @OPTS;
+	if(defined $postd) {
+		push @OPTS,'--post',$postd;
+	}
+
+	if($DL->execute("-r",$REF,"-u",$URL,"-s",$output,@OPTS) == 0) {
 		my ($ok,$type) = check_type($output);
 		if($ok) {
 			return 1;
@@ -199,11 +249,16 @@ sub download_torrent {
 				chomp($title);
 			}
 		}
-		$filename = ($title ? normalize($title) . "_" : "") . $hash;
+		$filename = ($title ? short_filename(normalize($title)) . "_" : "") . $hash;
 	}
 	else {
 		$filename =~ s/\.torrent$//gi;
+		$filename = short_filename($filename);
 	}
+	$filename =~ s/\[?email&#160;protected\]?//g;
+	$filename =~ s/[\\\?\:\>\<\/\*]+\s*//g;
+	
+	#$filename = short_filename($filename);
 	if($dest) {
 		$output = File::Spec->catfile($dest,$filename);
 	}
@@ -211,49 +266,75 @@ sub download_torrent {
 		$output = $filename;
 	}
 
-	app_message "\n$URI\n";
-
-
-	if($URI =~ m/^(magnet:[^\t]+)/) {
-		$URI =~ s/&amp;/&/g;
-		app_message2 "Save magnet uri:\n  =>$filename.txt\n";
-		if(open FO,">:utf8",$output . ".txt") {
-			print FO $URI,"\n";
-			close FO;
-			print STDERR "[OK]\n";
-		}
-		else {
-			print STDERR "Error:$!\n";
-		}
-	}
+	#app_message "\n$URI\n";
+	app_message2 "File name length: " . length("$filename") . "\n";
 	app_message2 "Save torrent file:\n  =>$filename.torrent\n";
 	$output .= ".torrent";
+	my $exit;
 	if(check_type($output)) {
 		app_warning "Error, File already downloaded, Ignored\n";
 		write_hash($hash,$title);
-		return error_no("IGNORED");
+		$exit =  error_no("IGNORED");
 	}
-	foreach my $site (@SITES) {
-		my $sitename = $site;
-		if($site =~ m/:\/\/([^\/]+)/) {
-			$sitename = $1;
+	if(!defined $exit) {
+		foreach my $site (@SITES) {
+			my $sitename = $site;
+			if($site =~ m/:\/\/([^\/]+)/) {
+				$sitename = $1;
+			}
+			my $url = $site;
+			$url =~ s/:HASH:/$hash/g;
+	#		print STDERR "<= $url\n";
+			print STDERR "  Try [$sitename] ... ";
+			if(download($output,$url)) {
+				color_print('GREEN',"  [OK]\n");
+				write_hash($hash,"$title\t$url");
+				$exit = error_no("OK");
+				last;
+			}
+			else {
+				color_print('RED',"  [FAILED]\n");
+			}
 		}
-		my $url = $site;
-		$url =~ s/:HASH:/$hash/g;
-#		print STDERR "<= $url\n";
-		print STDERR "  Try [$sitename] ... ";
-		if(download($output,$url)) {
-			color_print('GREEN',"  [OK]\n");
-			color_print('GREEN', "[OK]\n\n");
-			write_hash($hash,"$title\t$url");
-			return error_no("OK");
+	}
+	if(!defined $exit) {
+		foreach my $sitename(keys %SITES2) {
+			my $url = $SITES2{$sitename}($hash);
+			next unless($url);
+			print STDERR "  Try [$sitename]$url ... ";
+			if(download($output,$url)) {
+				color_print('GREEN',"  [OK]\n");
+				write_hash($hash,"$title\t$url");
+				$exit = error_no("OK");
+				last;
+			}
+			else {
+				color_print('RED',"  [FAILED]\n");
+			}
+			
+		}
+	}
+	if(!defined $exit){
+		if($URI =~ m/^(magnet:[^\t]+)/) {
+			$URI =~ s/&amp;/&/g;
+			app_message2 "Save magnet uri:\n  =>$filename.txt\n";
+			if(open FO,">:utf8",$output . ".txt") {
+				print FO $URI,"\n";
+				close FO;
+				print STDERR "[OK, magnet only]\n";
+				$exit = error_no("FAILED");
+			}
+			else {
+				print STDERR "Error:$!\n";
+				$exit = error_no("FAILED");
+			}
 		}
 		else {
-			color_print('RED',"  [FAILED]\n");
+			color_print('RED',"[Failed]\n\n");
+			$exit = error_no("FAILED");
 		}
 	}
-	color_print('RED',"[Failed]\n\n");
-	return error_no("FAILED");
+	return $exit;
 }
 
 sub USAGE {

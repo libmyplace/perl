@@ -15,7 +15,7 @@ sub OPTIONS {qw/
 	simple
 	recursive|r
 	quiet
-	history
+	history|hist
 	referer=s
 	overwrite|o
 	force|f
@@ -52,7 +52,7 @@ sub extname {
 sub normalize {
 	my $_ = $_[0];
 	if($_) {
-		s/[\?\*\/:\\]/ /g;
+		s/[\?\*:\\\/]/ /g;
 	}
 	return $_;
 }
@@ -65,6 +65,7 @@ sub save_weipai {
 	if($self->{OPTS}->{'no-download'}) {
 		push @prog,"--no-download";
 	}
+	push @prog,'--hist' if($self->{OPTS}->{'history'});
 	push @prog,('--mtm',@_,'--',$url);
 	push @prog,$filename if($filename);
 	my $r = system(@prog);
@@ -304,92 +305,121 @@ sub save_torrent {
 	}
 }
 
+use Cwd qw/getcwd/;
 sub download {
 	my $self = shift;
 	my $line = shift;
 	my @opts = @_;
 	$_ = $line;
 	my $filename = $_;
+	my $wd;
+	my $KWD;
+	my $exit;
 	if(!$_) {
 		return $self->EXIT_CODE('IGNORED');
+	}
+	elsif(m/^(.+?\s*\t\s*([^\t]+))\s*\t\s*([^\t]+)$/) {
+		$_ = $1;
+		$filename = $2;
+		$wd = $3;
+		$KWD = getcwd;
 	}
 	elsif(m/^.+\s*\t\s*(.+)$/) {
 		$filename = $1;
 	}
 	$filename =~ s/.*[\/\\]+//;
+	if($wd) {
+		mkdir $wd unless(-d $wd);
+		if(!chdir $wd) {
+			print STDERR "Error change directory: $wd!\n";
+			return $self->EXIT_CODE("ERROR");
+		}
+		else {
+			$self->print_msg("Change directory: $wd\n");
+			$self->{saved_prompt} = $self->{mtm}->get_prompt;
+			$self->{mtm}->set_prompt($self->{saved_prompt} . ":" . $wd);
+		}
+	}
 	if($self->{OPTS}->{touch}) {
 		$self->print_msg("[Touch] $filename\n");
 		system("touch","--",$filename);
-		return $self->EXIT_CODE("DEBUG");
+		$exit = $self->EXIT_CODE("DEBUG");
 	}
 	elsif($self->{OPTS}->{markdone}) {
 		if(-f $filename) {
 			$self->print_msg("[Mark done] $filename\n");
-			return $self->EXIT_CODE("IGNORED");
+			$exit = $self->EXIT_CODE("IGNORED");
 		}
 		else {
 			$self->print_msg("[Not exists] $filename\n");
-			return $self->EXIT_CODE("UNKNOWN");
+			$exit = $self->EXIT_CODE("UNKNOWN");
 		}
 	}
-	if(!$_) {
-		1;
+	if(defined $exit) {
+	}
+	elsif(!$_) {
+		$exit = 1;
 	}
 	elsif(m/^post:\/\/(.+)$/) {
-		$self->save_http_post($1);
+		$exit = $self->save_http_post($1);
 	}
 	elsif(m/^qvod:(.+)\t(.+)$/) {
-		$self->save_qvod($1,$2);
+		$exit = $self->save_qvod($1,$2);
 	}
 	elsif(m/^qvod:(.+)$/) {
-		$self->save_qvod($1);
+		$exit = $self->save_qvod($1);
 	}
 	elsif(m/^bdhd:(.+)\t(.+)$/) {
-		$self->save_bdhd($1,$2);
+		$exit = $self->save_bdhd($1,$2);
 	}
 	elsif(m/^bdhd:(.+)$/) {
-		$self->save_bdhd($1);
+		$exit = $self->save_bdhd($1);
 	}
 	elsif(m/^(ed2k:\/\/.+)\t(.+)$/) {
-		$self->save_bhdh($1,$2);
+		$exit = $self->save_bhdh($1,$2);
 	}
 	elsif(m/^(ed2k:\/\/.+)$/) {
-		$self->save_bhdh($1);
+		$exit = $self->save_bhdh($1);
 	}
-	elsif(m/^(http:\/\/[^\/]*(?:weipai\.cn|oldvideo\.qiniudn\.com)\/.*\.(?:jpg|mp4|flv|f4v|mov|ts))\t(.+)$/) {
-		$self->save_weipai($1,$2);
+	elsif(m/^(http:\/\/[^\/]*(?:weipai\.cn|oldvideo\.qiniudn\.com)\/.*)\t(.+)$/) {
+		$exit = $self->save_weipai($1,$2);
 	}
-	elsif(m/^(http:\/\/[^\/]*(?:weipai\.cn|oldvideo\.qiniudn\.com)\/.*\.(?:jpg|mp4|flv|f4v|mov|ts))$/) {
-		$self->save_weipai($_);
+	elsif(m/^http:\/\/[^\/]*(?:weipai\.cn|oldvideo\.qiniudn\.com)\/.*/) {
+		$exit = $self->save_weipai($_);
 	}
 	elsif(m/^(https?:\/\/.+)\t(.+)$/) {
-		$self->save_http($1,$2);
+		$exit = $self->save_http($1,$2);
 	}
 	elsif(m/^(https?:\/\/.+)$/) {
-		$self->save_http($1);
+		$exit = $self->save_http($1);
 	}
 	elsif(m/^file:\/\/(.+)\t(.+)$/) {
-		$self->save_file($1,$2);
+		$exit = $self->save_file($1,$2);
 	}
 	elsif(m/^file:\/\/(.+)$/) {
-		$self->save_file($1,"./");
+		$exit = $self->save_file($1,"./");
 	}
 	elsif(m/^data:\/\/(.+)\t(.+)$/) {
-		$self->save_data($1,$2);
+		$exit = $self->save_data($1,$2);
 	}
 	elsif(m/$EXPS{torrent}/) {
-		$self->save_torrent($1,$2);
+		$exit = $self->save_torrent($1,$2);
 	}
 	elsif(m/$EXPS{magnet}\t(.+)$/) {
-		$self->save_torrent($1,$2);
+		$exit = $self->save_torrent($1,$2);
 	}
 	elsif(m/$EXPS{magnet}/) {
-		$self->save_torrent($1);
+		$exit = $self->save_torrent($1);
 	}
 	else {
 		$self->print_err("Error: URL not supported [$_]\n");
-		$self->EXIT_CODE("ERROR");
+		$exit = $self->EXIT_CODE("ERROR");
 	}
+	if($KWD) {
+		$self->{mtm}->set_prompt($self->{saved_prompt});
+		chdir $KWD;
+	}
+	return $exit;
 }
 
 sub MAIN {
@@ -447,6 +477,7 @@ sub MAIN {
 		'no-queue'=>$OPTS->{'no-queue'},
 		'no-download'=>$OPTS->{'no-download'},
 	);
+	$self->{mtm} = $mtm;
 	
 	if($OPTS->{input}) {
 		$mtm->set('input',$OPTS->{input});

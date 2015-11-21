@@ -1,5 +1,13 @@
 #!/usr/bin/perl -w
 package MyPlace::Program::SimpleQuery;
+BEGIN {
+    require Exporter;
+    our ($VERSION,@ISA,@EXPORT,@EXPORT_OK,%EXPORT_TAGS);
+    $VERSION        = 1.00;
+    @ISA            = qw(Exporter);
+    @EXPORT         = qw();
+    @EXPORT_OK      = qw(&validate_item &show_directory);
+}
 use strict;
 use warnings;
 use File::Spec::Functions qw/catfile/;
@@ -97,13 +105,51 @@ sub do_list {
 	return $EXIT_CODE{OK};
 }
 
-sub check_trash {
-	my $path = shift;
-	foreach('#Empty','#Trash') {
-		my $dir = $_ . "/" . $path;
-		if(-d $dir) {
-			print STDERR "[$path] in [$_] IGNORED!\n";
+sub validate_item {
+
+	my @teststr;
+	foreach(@_) {
+		push @teststr,$_ if(defined $_);
+	}
+	my $testname = join(" ",@teststr);
+	my $result = 1;
+	return 1 unless(@teststr);
+
+	foreach(@teststr) {
+		next if(!$_);
+		if(m/^#Trash/i) {
+			&app_error("[$testname] in catalog <#Trash>, Ignored\n");
 			return undef;
+		}
+	}
+
+
+
+	my %TRASHED;
+	if(open FI,'<','#TRASH.txt') {
+		foreach(<FI>) {
+			chomp;
+			s/\/+$//;
+			$TRASHED{$_} = 1;
+		}
+		close FI;
+	}
+
+	foreach(@teststr) {
+		s/\/+$//;
+		if(defined $TRASHED{$_}) {
+			&app_error("[$testname] in file <#TRASH.txt>, Ignored.\n");
+			return undef;
+		}
+	}
+
+	foreach('#Empty','#Trash') {
+		foreach my $path(@teststr) {
+			my $dir = $_ . "/" . $path;
+			if(-d $dir) {
+				print STDERR "[$testname] in directory [$_], Ignored.\n";
+				return undef;
+			}
 		}
 	}
 	return 1;
@@ -118,11 +164,10 @@ sub get_request {
 	foreach(@target) {
 		my @rows = @$_;
 		my $host = shift(@rows) || '*';
-		foreach my $item(@rows) {
+		foreach my $item(filter_items(@rows)) {
 			next unless($item && ref $item && @{$item});
 			my $dbname = $item->[4] || $host;
 			my $title = $OPTS->{createdir} ? $item->[1] . "/$dbname/" : "";
-			next unless(check_trash($title));
 			push @request,{
 				count=>1,
 				level=>$item->[3],
@@ -152,8 +197,8 @@ sub show_directory {
 sub do_action {
 	my $self = shift;
 	my $action = shift;
-	my @target = @_;
 	my $OPTS = $self->{options};
+	my @target = @_;
 	use MyPlace::URLRule::OO;
 	my ($count,$r,@request) = $self->get_request(@target);
 	my $idx = 0;
@@ -188,6 +233,19 @@ sub do_action {
 
 sub do_search {
 }
+sub filter_items {
+	my @items;
+	foreach my $item(@_) {
+		if(ref $item) {
+			next unless(validate_item($item->[0],$item->[1]));	
+		}
+		else {
+			next unless(validate_item($item));
+		}
+		push @items,$item;
+	}
+	return @items;
+}
 
 sub do_downloader {
 	my $self = shift;
@@ -217,11 +275,10 @@ sub do_downloader {
 		foreach(@target) {
 			my @rows = @$_;
 			my $host = shift(@rows);
-			foreach my $item(@rows) {
+			foreach my $item(filter_items(@rows)) {
 				next unless($item && @{$item});
 				my $dbname = $item->[4] || $host;
 				my $title = $item->[1] . "/$dbname";# . $item->[0];
-				next unless(check_trash($title));
 				push @request,$title;
 				push @{$r{directory}},$title;
 				$count++;
@@ -357,7 +414,7 @@ sub do_saveurl {
 			print STDERR "Error: ",$name,"\n";
 			return $EXIT_CODE{FAILED};
 		}
-		if(!check_trash($name)) {
+		if(!validate_item($id,$name)) {
 			return $EXIT_CODE{DO_NOTHING};
 		}
 		use MyPlace::URLRule::OO;

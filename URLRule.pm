@@ -313,11 +313,11 @@ sub get_rule_handler {
 		$info = parse_rule(@_);
 	}
 	if(!($info || ref $info || %{$info})) {
-		return {error=>'Rule not defined'},undef;
+		return {error=>'Rule not defined'};#,undef;
 	}
 	my $source = $info->{source};
 	if(!-f $source) {
-		return {error=>"Rule not defined:$source"},undef;
+		return {error=>"Rule not defined:$source"};#,undef;
 	}
 	my $id = $source;
 	if($CACHED_RULE{$id}) {
@@ -417,6 +417,10 @@ sub request {
 		$rule = $arg1;
 	}
 	my $handler = get_handler($rule);
+	if($handler->{error}) {
+		print STDERR "Error: ",$handler->{error},"\n";
+		return 0;
+	}
 #	my $request = $rule;
 	my $request = (@args > 0) ? parse_rule(@args) : $rule;
 	return $handler->apply(@$request{qw/url level action/});
@@ -430,7 +434,7 @@ sub apply_rule {
     }
 	my $handler = get_rule_handler($rule);
 	if($handler->{error}) {
-		print STDERR $handler->{error},"\n";
+		print STDERR "Error: ",$handler->{error},"\n";
 		return 0;
 	}
 	return $handler->apply($rule->{url},$rule->{level},$rule->{action});
