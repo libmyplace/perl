@@ -3,7 +3,7 @@ package MyPlace::Program::SimpleQuery;
 BEGIN {
     require Exporter;
     our ($VERSION,@ISA,@EXPORT,@EXPORT_OK,%EXPORT_TAGS);
-    $VERSION        = 1.00;
+    $VERSION        = 1.10;
     @ISA            = qw(Exporter);
     @EXPORT         = qw();
     @EXPORT_OK      = qw(&validate_item &show_directory);
