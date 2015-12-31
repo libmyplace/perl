@@ -69,7 +69,10 @@ sub run {
     $self->{lastStack} = [@this];
     if(@this) {
         my $cwd = CORE::shift @this || "";
+		use Cwd qw/getcwd/;
+		my $kwd;
         if($cwd) {
+			$kwd = getcwd;
             mkdir $cwd unless(-d $cwd);
             chdir $cwd or warn("$!\n");
         }
@@ -79,6 +82,7 @@ sub run {
             $func = $self->{package} . "::$func";
             $func->(@this);
         }
+		chdir $kwd if($kwd);
     }
     return 1;
 }

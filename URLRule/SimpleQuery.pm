@@ -4,7 +4,7 @@ use strict;
 use warnings;
 use MyPlace::URLRule;
 use MyPlace::SimpleQuery;
-our $SQ_DATABASE_LIST = "weibo.com,weipai.cn,vlook.cn,google.search.image,miaopai.com,blog.sina.com.cn,meipai.com,weishi.com";
+our $SQ_DATABASE_LIST = "weibo.com,weipai.cn,vlook.cn,google.search.image,miaopai.com,blog.sina.com.cn,meipai.com,weishi.com|meitulu.com";
 
 our @SQ_DATABASE_ALL;
 

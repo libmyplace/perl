@@ -8,8 +8,8 @@ BEGIN {
     our ($VERSION,@ISA,@EXPORT,@EXPORT_OK,%EXPORT_TAGS);
     $VERSION        = 1.00;
     @ISA            = qw(Exporter);
-    @EXPORT         = qw(dump);
-    @EXPORT_OK      = qw();
+    @EXPORT         = qw(debug_dump);
+    @EXPORT_OK      = qw(dump);
 }
 
 
@@ -18,6 +18,9 @@ sub dumper {
 	return Data::Dumper->Dump(@_);
 }
 sub dump {
+	goto &debug_dump;
+}
+sub debug_dump {
 	my %table;
 	my $idx;
 	while(@_) {

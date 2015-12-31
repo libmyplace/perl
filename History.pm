@@ -10,7 +10,7 @@ sub new {
 	$self->{database} = {};
 	return $self;
 }
-sub save {
+sub add {
 	my $self = shift;
 	my $url = shift;
 	return undef if($self->{database}->{$url});
@@ -23,7 +23,7 @@ sub close {
 	my $self = shift;
 	close $self->{storage_handler} if($self->{storage_handler});
 }
-sub write {
+sub save {
 	my $self = shift;
 	return $self->close(@_);
 }
@@ -53,19 +53,19 @@ sub check {
 sub notify_next {
 	my $self = shift;
 	my $next = shift;
-	my $savelast = shift;
-	$self->save_last() if($savelast);
+	my $addlast = shift;
+	$self->add_last() if($addlast);
 	$self->{lasttask}=$next;
 	return $next;
 }
-sub save_last {
+sub add_last {
 	my $self = shift;
-	$self->save($self->{lasttask}) if($self->{lasttask});
+	$self->add($self->{lasttask}) if($self->{lasttask});
 }
 
 sub DESTORY {
 	my $self = shift;
-	$self->write() if(ref $self);
+	$self->save() if(ref $self);
 }
 
 1;

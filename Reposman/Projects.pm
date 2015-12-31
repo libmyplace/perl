@@ -186,7 +186,7 @@ sub translate_url {
 	my $root;
 	my $leaf;
 	my $path;
-	print STDERR "Translate from $url\n";	
+#	print STDERR "Translate from $url\n";	
 	if($names->{fullname}) {
 		$path = $names->{fullname};
 	}
@@ -245,7 +245,7 @@ sub translate_url {
 	if($url and $id) {
 		$url =~ s/:\/\//:\/\/$id\@/;
 	}
-	print STDERR "\t To $url\n";	
+	#print STDERR "\t To $url\n";	
     return $url;
 }
 

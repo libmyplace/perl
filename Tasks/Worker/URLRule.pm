@@ -403,7 +403,7 @@ sub work {
 			$task->{summary} = 'No action assicated';
 			return $self->error($task,$task->{summary});
 		}
-		$hosts_o = 'weipai.cn,vlook.cn,meipai.com,miaopai.com,weibo.com,moko.cc' if($hosts_o eq '*');
+		$hosts_o = 'weipai.cn,vlook.cn,meipai.com,miaopai.com,weibo.com,moko.cc,meitulu.com' if($hosts_o eq '*');
 		my ($hosts,@HOSTS_NEXT) = split(/\s*[,\|]\s*/,$hosts_o);
 
 		if(@HOSTS_NEXT) {
@@ -456,7 +456,7 @@ sub work {
 		}
 
 		if($CMD eq '!UPDATE') {
-			if(lc($hosts) =~ m/weipai.cn|vlook.cn|meipai.com|miaopai.com/) {
+			if(lc($hosts) =~ m/weipai.cn|vlook.cn|meipai.com|miaopai.com|meitulu.com/) {
 				$CMD = '!DOWNLOADER';
 			}
 			else {

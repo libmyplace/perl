@@ -7,8 +7,25 @@ BEGIN {
     our ($VERSION,@ISA,@EXPORT,@EXPORT_OK,%EXPORT_TAGS);
     $VERSION        = 1.00;
     @ISA            = qw(Exporter);
-    @EXPORT         = qw();
-    @EXPORT_OK      = qw(&new_json_data &get_url &parse_pages &unescape_text &get_html &decode_html &js_unescape &strnum new_html_data &expand_url &create_title &extract_text &html2text);
+    @EXPORT         = qw(
+		&get_url
+		&parse_html
+		&uri_rel2abs
+	);
+    @EXPORT_OK      = qw(
+		&new_file_data
+		&new_json_data &get_url
+		&parse_pages &unescape_text
+		&get_html &decode_html
+		&js_unescape &strnum
+		new_html_data &expand_url
+		&create_title &extract_text
+		&html2text &htmlcontent_to_text
+		&parse_html
+		&uri_rel2abs
+		&get_url_redirect
+		&extract_title
+	);
 }
 use Encode qw/from_to decode encode/;
 use MyPlace::Curl;
@@ -39,6 +56,13 @@ $r = $r . "\n<base href=\"$base\"> " if($base);
 $r = $r . "\n</head>\n<body>\n" . $html . "\n</body>\n</html>";
 $r =~ s/\n/\0/sg;
 	return "data://$r\t$title.html";
+}
+
+sub new_file_data {
+	my $file = shift;
+	my $t = join("",@_);
+	$t =~ s/\n/\\n/sg;
+	return "data://$t\t$file";
 }
 
 sub hash2str {
@@ -84,19 +108,49 @@ sub js_unescape {
 		return;
 	}
 	elsif(@_ == 1) {
-		$_ = $_[0];
+		local $_ = $_[0];
         $_ =~ s/%u([0-9a-f]+)/chr(hex($1))/eig;
         $_ =~ s/%([0-9a-f]{2})/chr(hex($1))/eig;
 		return $_;
 	}
 	else {
 		my @r;
+		local $_;
 		foreach(@_) {
 			$_ = js_unescape($_);
 			push @r,$_;
 	    }
 		return @r;
 	}
+}
+sub extract_title {
+	my $title = shift;
+	return unless($title);
+	$title = decode('utf8',$title);
+	$title =~ s/\@微拍小秘书//g;
+	$title =~ s/”//g;
+	$title =~ s/<[^.>]+>//g;
+	$title =~ s/\/\?\*'"//g;
+	$title =~ s/&amp;amp;/&/g;
+	$title =~ s/&amp;/&/g;
+	$title =~ s/&hellip;/…/g;
+	$title =~ s/&[^&]+;//g;
+#	$title =~ s/\x{1f60f}|\x{1f614}|\x{1f604}//g;
+#	$title =~ s/[\P{Print}]+//g;
+#	$title =~ s/[^\p{CJK_Unified_Ideographs}\p{ASCII}]//g;
+	$title =~ s/[^{\p{Punctuation}\p{CJK_Unified_Ideographs}\p{CJK_SYMBOLS_AND_PUNCTUATION}\p{HALFWIDTH_AND_FULLWIDTH_FORMS}\p{CJK_COMPATIBILITY_FORMS}\p{VERTICAL_FORMS}\p{ASCII}\p{LATIN}\p{CJK_Unified_Ideographs_Extension_A}\p{CJK_Unified_Ideographs_Extension_B}\p{CJK_Unified_Ideographs_Extension_C}\p{CJK_Unified_Ideographs_Extension_D}]//g;
+#	$title =~ s/[\p{Block: Emoticons}]//g;
+	#print STDERR "\n\n$title=>\n", length($title),"\n\n";
+	$title =~ s/\s{2,}/ /g;
+	$title =~ s/[\r\n\/\?:\*\>\<\|]+/ /g;
+	$title =~ s/_+$//;
+	my $maxlen = 70;
+	if(length($title) > $maxlen) {
+		$title = substr($title,0,$maxlen);
+	}	
+	$title =~ s/^\s+//;
+	$title =~ s/\s+$//;
+	return encode('utf8',$title);
 }
 
 sub get_url {
@@ -364,11 +418,14 @@ sub html2text {
 	my @r;
 	foreach(@text) {
 		next unless($_);
+		s/&nbsp;/ /g;
 		s/[\r\n]+$//;
 		s/<\/?(?:br|td)\s*>/###NEWLINE###/gi;
 		s/<\/p\s*>/###NEWLINE######NEWLINE###/gi;
 		s/\s*<[^>]+>\s*//g;
 		s/###NEWLINE###/\n/g;
+		s/^\s+//;
+		s/\s+$//;
 		next unless($_);
 		push @r,$_;
 	}
@@ -379,6 +436,142 @@ sub html2text {
 		return join("\n",@r);
 	}
 
+}
+sub parse_html {
+	my $parser_rule = shift;
+	return unless($parser_rule);
+	return unless(ref $parser_rule);
+	return unless(ref $parser_rule eq 'HASH');
+	my %PARSER = %$parser_rule;
+	my %R;
+	my $now;
+	my @cached;
+	foreach(@_) {
+		next if(m/^\s*$/);
+		foreach my $k (keys %PARSER) {
+			my ($b,$e) = @{$PARSER{$k}};
+			if(m/$b/) {
+				if($now and @cached) {
+					push @{$R{$k}},[@cached];
+				}
+				$now = $k;
+				@cached = ();
+			}
+			if(m/$e/) {
+				if($now) {
+					push @{$R{$now}},[@cached,$_];
+				}
+				$now = undef;
+				@cached = ();
+			}
+		}
+		if($now) {
+			push @cached,$_;		
+		}
+	}
+	if($now and @cached) {
+		push @{$R{$now}},[@cached];
+	}
+	foreach my $k (keys %PARSER) {
+		if($PARSER{$k} and $R{$k}) {
+			my ($extractor,$max,$joiner,$to_string) = (
+				$PARSER{$k}->[2],
+				$PARSER{$k}->[3],
+				$PARSER{$k}->[4],
+				$PARSER{$k}->[5],
+			);
+			$extractor ||= 'default';
+			$max = $max || scalar(@{$R{$k}}); 
+			$joiner = $joiner || '';
+			my $cur = 0;
+			my @captures = @{$R{$k}};
+			my @data;
+			my $ext_type = ref $extractor;
+			#	print STDERR "Extractor: $ext_type, $extractor\n";
+
+			while(@captures) {
+				last if($cur>=$max);
+				$cur++;
+				my $cols = shift(@captures);
+				next unless($cols and @$cols);
+				#print STDERR $cur++,"\n";
+				my $texts;
+				if(!$ext_type) {
+					$texts = join($joiner,@$cols);
+				}
+				elsif($ext_type eq 'GLOB') {
+					$texts = join($joiner,&$extractor(@$cols));
+				}
+				elsif($ext_type eq 'CODE') {
+					$texts = join($joiner,&$extractor(@$cols));
+				}
+				else {
+					$texts = join($joiner,@$cols);
+				}
+				push @data,$texts if($texts);
+			}	
+			$R{$k} = $to_string ? join("",@data) : \@data;
+		}
+	}
+	return %R;
+
+}
+sub htmlcontent_to_text {
+	my @text = @_;
+	foreach(@text) {
+		s/\s*<[^>]+>\s*//g;	
+		#print STDERR $_,"\n";
+	}
+	$_ = join("",@text);
+	s/^\s+//;
+	s/\s+$//;
+	return $_;
+}
+
+sub uri_rel2abs {
+	my $leaf = shift;
+	my $root = shift;
+	return $leaf unless($root and $leaf);
+	return $leaf if($leaf =~ m/^\w+:\/\//);
+	return "http:\/\/$leaf" if($leaf =~ m/^www\./);
+	$root =~ s/\/[^\/]+$//;
+	if($leaf =~ m/^\//) {
+		$root =~ s/^(\w+:\/\/[^\/]+).*$/$1/;
+		$leaf =~ s/^\/+//;
+	}
+	return $root . "/" . $leaf;
+}
+sub get_url_redirect {
+	my $url = shift;
+	my @postdata = @_;
+	my @CURL = qw/curl --silent -D -/;
+	my $verbose = 0;
+	if(@postdata) {
+		foreach(@postdata) {
+			if($_ eq '-v' or $_ eq '--verbose') {
+				$verbose++;
+				next;
+			}
+			push @CURL,'-d',$_;
+		}
+	}
+	my $rurl;
+	push @CURL,'--verbose' if($verbose>1);
+	print STDERR "HTTP request sending to $url\n";
+	open FI,'-|',@CURL,'--url',$url;
+	foreach(<FI>) {
+		print STDERR $_ if($verbose);
+		chomp;
+		if(m/^[\s\r\n]*Location:\s*(http:\/\/[^\r\n]+)/) {
+			$rurl = $1;
+			last;
+		}
+	}
+	close FI;
+	if($verbose) {
+		print STDERR "    No URL redirection\n" unless($rurl);
+	}
+	return $rurl;
 }
 
 1;

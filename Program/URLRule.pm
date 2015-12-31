@@ -39,6 +39,7 @@ sub OPTIONS {qw/
 	input|i=s
 	follow
 	reposter
+	ffollow
 /;}
 
 
@@ -510,6 +511,7 @@ sub parse_url {
 	return 1,\%result;
 }
 
+
 sub CMD_ADD {
 	my $self = shift;
 	my $OPTS = $self->{OPTS};
@@ -550,12 +552,13 @@ sub CMD_ADD {
 	if(!defined $OPTS->{hosts}) {
 		die("Error <HOSTS> not defined\n");
 	}
-	if($OPTS->{follow}) {
+	if($OPTS->{follow} || $OPTS->{'ffollow'}) {
 		my @hosts;
+		my $fn = $OPTS->{'ffollow'} ? "follows!.txt" : "follows.txt";
 		foreach my $hostname (split(/\s*,\s*/,$OPTS->{hosts})) {
 			push @hosts,$hostname;
-			my $f = "sites/$hostname/follows.txt";
-			foreach($f,"follows/$hostname/follows.txt") {
+			my $f = "follows/$hostname/$fn";
+			foreach($fn,"sites/$hostname/$fn") {
 				$f = $_ if(-f $_);
 			}
 			push @hosts,$f;
@@ -584,6 +587,46 @@ sub CMD_ADD {
 				$USD->save();
 			}
 		}
+	}
+	return $exitval;
+}
+
+sub CMD_FOLLOW {
+	my $self = shift;
+	my $OPTS = $self->{OPTS};
+	my $name = shift;
+	my $id = shift;
+	my $host = shift(@_) || $OPTS->{hosts} || $OPTS->{db} || 'ROOT';
+	my $exitval = 0;
+
+	if(!$id) {
+		$id = $name;
+		$name = '';
+	}
+	my $fn = $OPTS->{'force'} ? "follows!.txt" : "follows.txt";
+	my @hosts;
+	foreach my $hostname (split(/\s*,\s*/,$host)) {
+		my $path = ($hostname eq 'ROOT') ? $fn :  "$hostname/$fn";
+		my $f = "follows/$path";
+		foreach($fn,"sites/$path") {
+			$f = $_ if(-f $_);
+		}
+		push @hosts,$f;
+	}
+	$OPTS->{hosts} = join(",",@hosts);
+	if($OPTS->{reposter}) {
+		$name = '#Reposter/' . $name if($name);
+	}
+	$self->DB_INIT();
+
+	if($self->{USQ}) {
+		printf STDERR "%12s %s\n",'[HOSTS]', "Add $id -> $name <$OPTS->{hosts}>";
+		 my ($count,$msg) = $self->{USQ}->additem($id,$name);
+#		 print STDERR "\t$msg\n" if($msg);
+		 if($count) {
+			 $self->{USQ}->save();
+		 }
+		 $exitval = $count > 0 ? $self->EXIT_CODE('OK') : $self->EXIT_CODE('IGNORED');
 	}
 	return $exitval;
 }
@@ -645,6 +688,9 @@ sub MAIN {
 
 	if($CMD eq 'ADD') {
 		return $self->CMD_ADD(@_);
+	}
+	elsif($CMD eq 'FOLLOW') {
+		return $self->CMD_FOLLOW(@_);
 	}
 	else {
 		$self->DB_INIT();

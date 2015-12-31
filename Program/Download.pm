@@ -138,7 +138,7 @@ sub build_cmdline {
 		}
         push @result,"--max-time",$OPTS{maxtime} if($OPTS{maxtime});
 		push @result,"--silent" if($OPTS{quiet});
-		push @result,"--compressed" if($OPTS{compressed});
+		push @result,"--compressed" unless($OPTS{'no-compressed'});
         if($url =~ $BLOCKED_EXP) {
             app_message "USE PROXY $proxy\n";
             push @result,"--socks5-hostname",$proxy;
@@ -315,6 +315,7 @@ sub download {
 #getopts($OptFlag,\%OPT);
 
 
+my $STATIC_NAME_IDX = 0;
 sub _get_url {
 	my $self = shift;
 	my $options = shift;
@@ -350,8 +351,22 @@ sub _get_url {
 		if($saveas =~ m/\/$/) {
 		    $saveas .= "index.html";
 		}
-		if($saveas and $options->{autoame} and -f $saveas) {
+		if($saveas and $options->{autoname} and -f $saveas) {
 		    $saveas = get_uniqname($saveas);
+		}
+		if($saveas eq ':DOWNLOADER_AUTONAME') {
+			my $dlen = 5;
+			my $ext = $url;
+			$ext =~ s/\?[^\?]+$//;
+			$ext =~ s/#[^#]+$//;
+			$ext =~ s/^.*\.//;
+			$ext = "" unless($ext);
+			my $fn;
+			do {
+				$STATIC_NAME_IDX++;
+				$fn = '0'x(5 - length($STATIC_NAME_IDX)) . $STATIC_NAME_IDX . ".$ext";
+			} while(-f $fn);
+			$saveas = $fn;
 		}
 		
 		if ((!$options->{force}) and -f "$saveas" ) {
@@ -497,7 +512,7 @@ sub _download {
 }
 
 return 1 if caller;
-my $PROGRAM = new(__PACKAGE__);
+my $PROGRAM = MyPlace::Program::Download->new();
 exit $PROGRAM->execute(@ARGV);
 
 

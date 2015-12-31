@@ -4,7 +4,8 @@ BEGIN {
     our ($VERSION,@ISA,@EXPORT,@EXPORT_OK,%EXPORT_TAGS);
     $MyPlace::Debug::VERSION        = 1.00;
     @ISA            = qw(Exporter);
-    @EXPORT_OK      = qw(&to_string);
+	@EXPORT			= qw(&debug_log);
+    @EXPORT_OK      = qw(&to_string &debug_log);
 }
 use strict;
 
@@ -66,5 +67,13 @@ sub to_string {
 		$output .= $tab . &scalar_to_string($var) . $suffix . "\n";
 	}
 	return $output;
+}
+
+sub debug_log {
+	require Data::Dumper;
+	open FO,">","DEBUGLOG_" . time() . ".log";
+	print FO Data::Dumper::Dumper([\@_],['$INFO']),"\n";
+	close FO;
+	return @_;
 }
 1;

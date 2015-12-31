@@ -483,8 +483,10 @@ sub urlrule_quick_parse {
 		pages_limit
         charset
     /};
-
-    $html = get_url($url,'-v',(defined $charset ? "charset:$charset" : undef),'--referer'=>$url) unless($html);
+	
+	my @curl = ($url,'-v',(defined $charset ? "charset:$charset" : undef),'--referer',$url);
+	push @curl,'--compressed' if($args{compressed});
+    $html = get_url(@curl) unless($html);
 	return (
 		'Error',
 		"Failed restriving $url",
@@ -592,6 +594,41 @@ sub rule {
 	return $self->{default_rule};
 }
 
+sub error {
+	my $r = shift;
+	return unless($r);
+	if($r && ref $r) {
+		print STDERR "Error: $r->{error}\n";
+	}
+	else {
+		print STDERR "Error: $r\n";
+	}
+}
+
+sub post_process {
+	my $self = shift;
+	my $status = shift;
+	my $result = shift;
+	if(!($status or $result)) {
+		error("Invalid request");
+		return undef;
+	}
+	if(!$result) {
+		error("Empty response");
+		return undef;
+	}
+	elsif(!ref $result) {
+		if(!$status) {
+			error($result);
+			return undef;
+		}
+		else {
+			print STDERR "$result\n";
+			return undef;
+		}
+	}
+	return $result;
+}
 
 1;
 
