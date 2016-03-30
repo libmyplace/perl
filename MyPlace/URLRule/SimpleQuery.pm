@@ -1,5 +1,13 @@
 #!/usr/bin/perl -w
 package MyPlace::URLRule::SimpleQuery;
+BEGIN {
+    require Exporter;
+    our ($VERSION,@ISA,@EXPORT,@EXPORT_OK,%EXPORT_TAGS);
+    $VERSION        = 1.10;
+    @ISA            = qw(Exporter);
+    @EXPORT         = qw();
+    @EXPORT_OK      = qw(&usq_locate_db &usq_test_key);
+}
 use strict;
 use warnings;
 use MyPlace::URLRule;
@@ -8,6 +16,72 @@ our $SQ_DATABASE_LIST = "weibo.com,weipai.cn,vlook.cn,google.search.image,miaopa
 
 our @SQ_DATABASE_ALL;
 
+sub usq_test_key {
+	my $dbfile = shift;
+	my $valuekey = shift;
+	return unless($dbfile);
+	return unless($valuekey);
+	return unless(-f $dbfile);
+	open FI,'<',$dbfile or return;
+	my $match;
+	while(<FI>) {
+		chomp;
+		foreach my $str (split(/\t|    /),$_) {
+			if($valuekey eq $str) {
+				$match = 1;
+				last;
+			}
+		}
+		last if($match);
+	}
+	close FI;
+	return $match;
+}
+
+sub usq_locate_db {
+	my $dbname = shift;
+	my @names = ($dbname,@_);
+	return unless($dbname);
+	my %result;
+	if($dbname eq '*') {
+		@names = ();
+		foreach my $pdir (@MyPlace::URLRule::URLRULE_LIB) {
+			next unless(-d $pdir);
+			foreach my $dir(glob("$pdir/sites/*/")) {
+				if(-d $dir and $dir =~ m/([^\/]+)\/$/) {
+					push @names,$1;
+				}
+			}
+		}
+	}
+	foreach my $dbname(@names) {
+		my $dbfile = $dbname;
+		foreach my $basename ($dbname, uc($dbname), $dbname . ".sq", uc($dbname) . ".sq") {
+			if(-f $basename) {
+				$dbfile = $basename;
+				last;
+			}
+			my $filename = MyPlace::URLRule::locate_file($basename);
+			if(-f $filename) {
+				$dbfile = $filename;
+				last;
+			}
+			$filename = MyPlace::URLRule::locate_file("sites/$basename");
+			if(-f $filename) {
+				$dbfile = $filename;
+				last;
+			}
+			$filename = MyPlace::URLRule::locate_file("sites/$basename/database.sq");
+			if(-f $filename) {
+				$dbfile = $filename;
+				last;
+			}
+		}
+		$result{$dbname} = $dbfile;
+	}
+	return %result;
+}
+
 sub load_db {
 	my $self = shift;
 	my $dbname = shift;
@@ -15,55 +89,24 @@ sub load_db {
 	if(ref $dbname) {
 		($dbname,@options) = @$dbname;
 	}
-	elsif($dbname eq '*') {
-		@SQ_DATABASE_ALL = ();	
-		foreach my $pdir (@MyPlace::URLRule::URLRULE_LIB) {
-			next unless(-d $pdir);
-			foreach my $dir(glob("$pdir/sites/*/")) {
-				if(-d $dir and $dir =~ m/([^\/]+)\/$/) {
-					push @SQ_DATABASE_ALL,$1;
-				}
-			}
+	my %db = usq_locate_db($dbname);
+	return unless(%db);
+	my $first;
+	foreach my $dbname (keys %db) {
+		my $dbfile = $db{$dbname};
+		my $db = new MyPlace::SimpleQuery;
+		if(@options) {
+				$db->set_options(@options);
 		}
-		foreach(@SQ_DATABASE_ALL) {
-			$self->load_db($_,@options);
-		}
-		return;
+		print STDERR "Loading database [$dbname] $dbfile ...\n" if($self->{VERBOSE});
+		$db->feed($dbfile) if(-f $dbfile);
+		$self->{db} = {} unless($self->{db});
+		$self->{db}->{$dbname} = $db;
+		$self->{dbinfo} = {} unless($self->{dbinfo});
+		$self->{dbinfo}->{$dbname} = $dbfile;
+		$first = $db unless($first);
 	}
-
-	my $dbfile = $dbname;
-	foreach my $basename ($dbname, uc($dbname), $dbname . ".sq", uc($dbname) . ".sq") {
-		if(-f $basename) {
-			$dbfile = $basename;
-			last;
-		}
-		my $filename = MyPlace::URLRule::locate_file($basename);
-		if(-f $filename) {
-			$dbfile = $filename;
-			last;
-		}
-		$filename = MyPlace::URLRule::locate_file("sites/$basename");
-		if(-f $filename) {
-			$dbfile = $filename;
-			last;
-		}
-		$filename = MyPlace::URLRule::locate_file("sites/$basename/database.sq");
-		if(-f $filename) {
-			$dbfile = $filename;
-			last;
-		}
-	}
-	my $db = new MyPlace::SimpleQuery;
-	if(@options) {
-			$db->set_options(@options);
-	}
-	print STDERR "Loading database [$dbname] $dbfile ...\n" if($self->{VERBOSE});
-	$db->feed($dbfile) if(-f $dbfile);
-	$self->{db} = {} unless($self->{db});
-	$self->{db}->{$dbname} = $db;
-	$self->{dbinfo} = {} unless($self->{dbinfo});
-	$self->{dbinfo}->{$dbname} = $dbfile;
-	return $db;
+	return $first;
 }
 
 sub dbfiles {
@@ -76,10 +119,10 @@ sub dbfiles {
 	return @files;
 }
 
-sub get_dbinfo {
+sub dbinfo {
 	my $self = shift;
-	my $info = $self->{dbinfo};
-	return %{$info};
+	my %info = %{$self->{dbinfo}} if($self->{dbinfo});
+	return %info;
 }
 
 sub new {

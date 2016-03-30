@@ -401,6 +401,13 @@ sub autoApply {
 			else {
 				foreach my $req (@requests) {
 					my(undef,@r) = $self->processNextLevel($req);
+					if(@r) {
+						push @DATAS,@r;
+					}
+					if($self->{outdated}) {
+						chdir $DIR_KEEP;
+						return 2;
+					}	
 					if($rule->{url} =~ m/weibo\.com/) {
 						my $sec = 10;
 						app_error(
@@ -409,13 +416,6 @@ sub autoApply {
 						);
 						sleep $sec;
 					}
-					if(@r) {
-						push @DATAS,@r;
-					}
-					if($self->{outdated}) {
-						chdir $DIR_KEEP;
-						return 2;
-					}	
 					chdir($cwd);
 				}
 			}
@@ -587,19 +587,41 @@ sub DUP_URL {
 	}	
 	return ($url);
 }
+
+sub get_url_id {
+	my $url = shift;
+	if($url =~ m/^http:\/\/[^\/]+\.sinaimg.cn/) {
+		$url =~ s/\s*\t.*$//;
+		$url =~ s/^http:\/\/[^\/]+\.sinaimg.cn/http:\/\/sinaimg.cn/;
+	}
+	return $url;
+}
+
 	sub write_database {
 		my $self = shift;
 		my $f_urls = shift;
 		my $data = shift;
 		my $count = 0;
 		my $OUTDATE = 1;
+		if(!$data) {
+			return undef;
+		}
+		elsif(!ref $data) {
+			return undef;
+		}
+		elsif(!@$data) {
+			app_prompt($self->{msghd} . "NO data to process", "\n");
+			return 1,0,0;
+		}
 		app_prompt($self->{msghd} . "Write data to database",$f_urls,"\n");
 		my %records;
 		if(-f $f_urls) {
 			if(open FI,'<',$f_urls) {
-				foreach(<FI>) {
-					chomp;
-					my @urls = DUP_URL($_);
+				foreach my $line(<FI>) {
+					chomp $line;
+					my $url = get_url_id($line);
+					my @urls = DUP_URL($url);
+					#$records{$_} = 1;
 					@records{(@urls)} = (1,1,1,1,1,1,1,1,1,1);
 				}
 				close FI;
@@ -612,18 +634,19 @@ sub DUP_URL {
 			}
 		}
 		if(open FO,'>>',$f_urls) {
-			foreach(@{$data}) {
-				if($records{$_}) {
-					if(m/weishi\.com|weishi_pic/) {
+			foreach my $url(@{$data}) {
+				my $id = get_url_id($url);
+				if($records{$id}) {
+					if($url =~ m/weishi\.com|weishi_pic/) {
 						$OUTDATE = 1;
 						last;
 					}
 					next;
 				}
-				print FO $_,"\n";
+				print FO $url,"\n";
 				$OUTDATE = 0;
 				$count++;
-				print STDERR "    + [$count]$_\n";
+				print STDERR "    + [$count]$url\n";
 			}
 			close FO;
 			app_warning($self->{msghd}, "$count lines wrote\n");
