@@ -11,6 +11,9 @@ BEGIN {
 		&get_url
 		&parse_html
 		&uri_rel2abs
+		&decode
+		&encode
+		&from_to
 	);
     @EXPORT_OK      = qw(
 		&new_file_data
@@ -25,6 +28,9 @@ BEGIN {
 		&uri_rel2abs
 		&get_url_redirect
 		&extract_title
+		&decode
+		&encode
+		&from_to
 	);
 }
 use Encode qw/from_to decode encode/;
@@ -41,6 +47,16 @@ my $curl = MyPlace::Curl->new(
 #	"retry"=>4,
 	"max-time"=>120,
 );
+
+#sub from_to {
+#	return Encode::from_to(@_);
+#}
+#sub decode {
+#	return Encode::decode(@_);
+#}
+#sub encode {
+#	return Encode::encode(@_);
+#}
 
 sub new_html_data {
 	my $html = shift;
