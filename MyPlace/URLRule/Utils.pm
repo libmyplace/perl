@@ -350,7 +350,6 @@ sub unescape_text {
     $text =~ s/(?:^\s+|\s+$)//;
     return $text;
 }
-
 sub create_title {
 	my $title = shift;
 	my $ext = shift;
@@ -366,10 +365,19 @@ sub create_title {
 	}
 	$title =~ s/-|－|【|】|\[|\]|\[|\]|\(|\)|\（|\）|\［|\］/_/g if($ext == 1);
 #	$title =~ tr'靠[][]()靠靠'________';
-	$title =~ s/^\s*_+\s*//;
-	$title =~ s/\s*_+\s*$//;
-	$title =~ s/\s*__+\s*/_/g;
+	$title =~ s/[-\s_]*-[-\s_]*/-/g;
+	$title =~ s/[-\s_]*_[-\s_]*/_/g;
+	$title =~ s/[-\s_]*\s[-\s_]*/ /g;
+	$title =~ s/^[\s!*?#~&^+_\-]*//g;
+	$title =~ s/[\s!*?#~&^+_\-]*$//g;
 	$title =~ s/^\[?www\.\w+\.\w+\]?//;
+	return $title;
+}
+
+sub create_torrent_title {
+	my $title = create_title(@_);
+	$title =~ s/^\s*[^@]+@[^@]+@\s*//;
+	$title =~ s/^(.*?)[\(\[]([A-Za-z]+)[-_](\d+)[\)\]]/$2-$3_$1/;
 	return $title;
 }
 
