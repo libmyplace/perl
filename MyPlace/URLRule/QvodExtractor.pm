@@ -16,7 +16,7 @@ my $utf8 = find_encoding('utf8');
 use utf8;
 
 sub normalize_url {
-	my $_ = shift;
+	local $_ = shift;
 	if(m/^http:\/\/adult\.qvod\//) {
 		s/^http:\/\/adult\.qvod\///;
 	}
@@ -45,7 +45,7 @@ sub _build_url {
 }
 
 sub _parse_url {
-	my $_ = shift;
+	local $_ = shift;
 	my $site;
 	my $path;
 	my $file;
@@ -90,7 +90,7 @@ sub build_url {
 use MyPlace::String::Utils qw/dequote/;
 
 sub normalize_title {
-	my $_ = shift;
+	local $_ = shift;
 	s/^\s+//;
 	s/\s+$//;
 	if(m/^最新(.+),好看的\1排行/) {
@@ -145,7 +145,7 @@ sub patch_result {
 }
 
 sub html2txt {
-	my $_ = $_[0];
+	local $_ = $_[0];
 	if(m/<[bB][rR]\s*\/>[　\s]*<[bB][rR]\s*\/>/) {
 		s/<[bB][rR]\s*\/>[　\s]*<[bB][rR]\s*\/>/\r\n/g;
 		s/<[bB][rR]\s*\/>//g;

@@ -31,6 +31,7 @@ BEGIN {
 		&decode
 		&encode
 		&from_to
+		&create_torrent_title
 	);
 }
 use Encode qw/from_to decode encode/;
