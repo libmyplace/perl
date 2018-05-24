@@ -38,13 +38,13 @@ use Encode qw/from_to decode encode/;
 use MyPlace::Curl;
 
 my $cookie = $ENV{HOME} . "/.curl_cookies.dat";
-my $cookiejar = $ENV{HOME} . "/.curl_cookies2.dat";
+#my $cookiejar = $ENV{HOME} . "/.curl_cookies2.dat";
 my $curl = MyPlace::Curl->new(
 	"location"=>'',
 	"silent"=>'',
 	"show-error"=>'',
 	"cookie"=>$cookie,
-	"cookie-jar"=>$cookiejar,
+	#	"cookie-jar"=>$cookiejar,
 #	"retry"=>4,
 	"max-time"=>120,
 );
@@ -587,7 +587,7 @@ sub get_url_redirect {
 	foreach(<FI>) {
 		print STDERR $_ if($verbose);
 		chomp;
-		if(m/^[\s\r\n]*Location:\s*(http:\/\/[^\r\n]+)/) {
+		if(m/^[\s\r\n]*[Ll]ocation:\s*(http:\/\/[^\r\n]+)/) {
 			$rurl = $1;
 			last;
 		}
