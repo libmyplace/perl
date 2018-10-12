@@ -519,6 +519,7 @@ sub process {
 	return unless($response->{count}>0);
 	if($response->{base} and $self->{request}->{buildurl}) {
 		foreach(@{$response->{data}}) {
+			next if(m/^#/);
 			next if(m/^(https?|ftp|magnet|qvod|bdhd|thunder|ed2k|data):/);
 			if($_ =~ m/^([^\t]+)\t+(.+)$/) {
 				$_ = URI->new_abs($1,$response->{base})->as_string() . "\t$2";

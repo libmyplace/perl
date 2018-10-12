@@ -165,8 +165,8 @@ sub extract_title {
 	if(length($title) > $maxlen) {
 		$title = substr($title,0,$maxlen);
 	}	
-	$title =~ s/^\s+//;
-	$title =~ s/\s+$//;
+	$title =~ s/^[-\s]+//;
+	$title =~ s/[-\s]+$//;
 	return encode('utf8',$title);
 }
 
@@ -372,6 +372,10 @@ sub create_title {
 	$title =~ s/^[\s!*?#~&^+_\-]*//g;
 	$title =~ s/[\s!*?#~&^+_\-]*$//g;
 	$title =~ s/^\[?www\.\w+\.\w+\]?//;
+	$title =~ s/^[-_\s]+//;
+	$title =~ s/[-_\s]+$//;
+	$title =~ s/\s+/_/g;
+	$title =~ s/\s*\[email&#160;protected\]\s*//g;
 	return $title;
 }
 
@@ -580,21 +584,30 @@ sub get_url_redirect {
 			push @CURL,'-d',$_;
 		}
 	}
+	my $error;
 	my $rurl;
 	push @CURL,'--verbose' if($verbose>1);
 	print STDERR "HTTP request sending to $url\n";
 	open FI,'-|',@CURL,'--url',$url;
 	foreach(<FI>) {
-		print STDERR $_ if($verbose);
+		#print STDERR $_ if($verbose);
 		chomp;
-		if(m/^[\s\r\n]*[Ll]ocation:\s*(http:\/\/[^\r\n]+)/) {
+		if(m/"why_captcha_detail"[^>]*>([^<]*)</) {
+			$error = "需要验证：$1";
+			last;
+		}
+		if(m/^[\s\r\n]*[Ll]ocation:\s*([^\r\n]+)/) {
 			$rurl = $1;
+			$rurl =~ s/^:?\/\//http:\/\//;
 			last;
 		}
 	}
 	close FI;
+	if($error) {
+		print STDERR "ERROR, $error\n";
+	}
 	if($verbose) {
-		print STDERR "    No URL redirection\n" unless($rurl);
+		print STDERR "ERROR, No URL redirection\n" unless($rurl);
 	}
 	return $rurl;
 }
