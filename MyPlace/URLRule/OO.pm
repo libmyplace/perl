@@ -595,6 +595,15 @@ sub get_url_id {
 		$url =~ s/\s*\t.*$//;
 		$url =~ s/^http:\/\/[^\/]+\.sinaimg.cn/http:\/\/sinaimg.cn/;
 	}
+	elsif($url =~ m/p\d*\.pstatp.com\/(large\/[^\/\s"&]+)\.jpe?g/) {
+		$url = "douyin:$1.jpg";
+	}
+	elsif($url =~ m/p\d*-dy\.bytecdn\.cn\/(large\/[^\/\s"&]+)\.jpe?g/) {
+		$url = "douyin:$1.jpg";
+	}
+	elsif($url =~ m/aweme\.snssdk\.com\/aweme\/.*\?video_id=([^\s&"]+)/) {
+		$url = "douyin:$1.mp4";
+	}
 	return $url;
 }
 
@@ -622,7 +631,7 @@ sub get_url_id {
 					chomp $line;
 					my $url = get_url_id($line);
 					my @urls = DUP_URL($url);
-					#$records{$_} = 1;
+					$records{$url} = 1;
 					@records{(@urls)} = (1,1,1,1,1,1,1,1,1,1);
 				}
 				close FI;
@@ -706,15 +715,16 @@ sub do_action {
 	}
 	$self->{DATAS_COUNT} = 0 unless(defined $self->{DATAS_COUNT});# ? $self->{DATAS_COUNT} + @$data : @$data;
 	if($action eq 'DOWNLOAD') {
-		my $f_urls='urls.lst';
-		my ($status,$count,$OUTDATE) = $self->write_database($f_urls,$data);
-		return $status unless($status);
+		#my $f_urls='urls.lst';
+		#my ($status,$count,$OUTDATE) = $self->write_database($f_urls,$data);
+		#return $status unless($status);
 		use MyPlace::Program::Downloader;
-		$self->{DATAS_COUNT} += $count;
-		if((!$ACTION_MODE{FORCE}) and $OUTDATE) {
-			$self->outdated();
-			return $count;
-		}
+		#$self->{DATAS_COUNT} += $count;
+		#if((!$ACTION_MODE{FORCE}) and $OUTDATE) {
+		#	$self->outdated();
+		#	return $count;
+		#}
+		my $count = scalar(@$data);
 		my $mpd = new MyPlace::Program::Downloader;
 		$mpd->execute(
 			'--title'=>$response->{title},

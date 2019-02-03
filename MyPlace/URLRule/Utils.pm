@@ -9,11 +9,12 @@ BEGIN {
     @ISA            = qw(Exporter);
     @EXPORT         = qw(
 		&get_url
-		&parse_html
-		&uri_rel2abs
-		&decode
-		&encode
-		&from_to
+		&url_getinfo
+		&url_getbase
+		&url_extract
+		&url_getname
+		&url_getfull
+		&get_safename
 	);
     @EXPORT_OK      = qw(
 		&new_file_data
@@ -143,6 +144,7 @@ sub js_unescape {
 sub extract_title {
 	my $title = shift;
 	return unless($title);
+	$title = js_unescape($title);
 	$title = decode('utf8',$title);
 	$title =~ s/\@微拍小秘书//g;
 	$title =~ s/”//g;
@@ -303,6 +305,9 @@ sub parse_pages {
             }
         }
 		$last = $d{limit} if($d{limit} and $d{limit} < $last);
+		if($d{error} and $last > $d{error}) {
+			return "Too much page [$last] return, something maybe wrong";
+		}
 		for(my $i = $pages_start;$i<=$last;$i+=$pages_margin) {
 			push @pass_data,"$pre$i$suf";
 		}
@@ -379,6 +384,23 @@ sub create_title {
 	return $title;
 }
 
+sub get_safename {
+	my $title = shift;
+	$title = unescape_text($title);
+	$title =~ s/[<>\?*\:\"\|\/\\]+/_/g;
+	$title =~ s/[-\s_]*-[-\s_]*/-/g;
+	$title =~ s/[-\s_]*_[-\s_]*/_/g;
+	$title =~ s/[-\s_]*\s[-\s_]*/ /g;
+	$title =~ s/^[\s!*?#~&^+_\-]*//g;
+	$title =~ s/[\s!*?#~&^+_\-]*$//g;
+	$title =~ s/^\[?www\.\w+\.\w+\]?//;
+	$title =~ s/^[-_\s]+//;
+	$title =~ s/[-_\s]+$//;
+	$title =~ s/\s+/_/g;
+	$title =~ s/\s*\[email&#160;protected\]\s*//g;
+	return $title;
+}
+
 sub create_torrent_title {
 	my $title = create_title(@_);
 	$title =~ s/^\s*[^@]+@[^@]+@\s*//;
@@ -388,21 +410,21 @@ sub create_torrent_title {
 
 sub expand_url {
 	my $url = shift;
-	if($url =~ m/^http:\/\/url.cn/) {
-		open FI,'-|',"curl -v -- \"$url\" 2>&1" or return $url;
-	}
-	else {
-		open FI,'-|','curl','--silent','-I',$url or return $url;
-	}
-	foreach(<FI>) {
-		chomp;
-		if(m/^<?\s*Location:\s*(http:.+)$/) {
-			my $loc = $1;
-			$loc =~ s/\s+$//;
-			print STDERR "$url => $loc\n";
-			return $loc;
-		}
-	}
+			if(open FI,"-|","curl","--silent","--dump-header","/dev/stdout","--",$url) {
+				while(<FI>) {
+					#print STDERR $_;
+					chomp;
+					if(m/^\s*<?\s*location\s*:\s*(.+?)\s*$/i) {
+						my $next = $1;
+						next unless($next =~ m/^http/);
+						print STDERR "URL: $url \n => $next\n";
+						close FI;
+						return $next;
+						last;
+					}
+				}
+				close FI;
+			}
 	return $url;
 }
 
@@ -449,12 +471,13 @@ sub html2text {
 		next unless($_);
 		s/&nbsp;/ /g;
 		s/[\r\n]+$//;
-		s/<\/?(?:br|td)\s*>/###NEWLINE###/gi;
+		s/<\/?(?:br|div|td)\s*\/?>/###NEWLINE###/gi;
 		s/<\/p\s*>/###NEWLINE######NEWLINE###/gi;
 		s/\s*<[^>]+>\s*//g;
 		s/###NEWLINE###/\n/g;
 		s/^\s+//;
 		s/\s+$//;
+		s/([\r\n]){2,}/$1/g;
 		next unless($_);
 		push @r,$_;
 	}
@@ -557,7 +580,79 @@ sub htmlcontent_to_text {
 	return $_;
 }
 
-sub uri_rel2abs {
+sub url_extract {
+	my $url = shift;
+	my $path = $url;
+	my $name = $url;
+	if($url =~ m/^(.+)\/([^\/]+)$/) {
+		$path = "$1/";
+		$name = $2;
+	}
+	elsif($url =~ m/^.+\/([^\/]+)\/$/) {
+		$path = $url;
+		$name = $1;
+	}
+	if(wantarray) {
+		$name =~ s/[\?#].*//;
+		$name =~ s/\+/ /g;
+		$name = create_title($name);
+		return ($path,$name);
+	}
+	else {
+		return $path;
+	}
+}
+sub url_getbase {
+	my $url = shift;
+	my $base = $url;
+	if($url =~ m/^([^\/]+:\/\/[^\/]+)/) {
+		$base = $1;
+	}
+	return $base;
+}
+
+sub url_getinfo {
+	my @r;
+	push @r,url_getbase(@_);
+	push @r,url_extract(@_);
+	return @r;
+}
+
+sub url_getname {
+	my $url = shift;
+	my $filename = $url;
+	$filename =~ s/[\?#].*$//;
+	${filename} =~ s/\/+$//;
+	${filename} =~ s/^.*\///;
+	${filename} =~ s/\+/ /g;
+	${filename} = get_safename(${filename});
+	return $filename;
+}
+
+
+sub url_getfull {
+	my $leaf = shift;
+	my $root = shift;
+	if($leaf =~ m/^[^\/]+:/) {
+		return $leaf;
+	}
+	my ($base,$path) = @_;
+	$base = url_getbase($root) unless($base);
+	$path = url_extract($root) unless($path);
+	if($leaf =~ m/^\/\/+/) {
+		my $scheme = $root;
+		$scheme =~ s/^([^:]+):.*$/$1/;
+		return $scheme . ":" . $leaf;
+	}
+	elsif($leaf =~ m/^\/+/) {
+		return $base . $leaf;
+	}
+	else {
+		return $path . $leaf;
+	}
+}
+
+sub url_rel2abs {
 	my $leaf = shift;
 	my $root = shift;
 	return $leaf unless($root and $leaf);
