@@ -300,6 +300,7 @@ sub autoApply {
 	my $self = shift;
 	my $DIR_KEEP = getcwd;
 	my @DATAS;
+	$self->{SUCCESS} = 0;
 	my ($rule,$res) = $self->request(@_);
 	$self->{levels}->{"done" . $rule->{level}} ||= 0;
 	$self->{levels}->{"done" . $rule->{level}} += 1;
@@ -726,28 +727,36 @@ sub do_action {
 		#}
 		my $count = scalar(@$data);
 		my $mpd = new MyPlace::Program::Downloader;
-		$mpd->execute(
+		my ($r) = $mpd->execute(
 			'--title'=>$response->{title},
 			'--no-queue',
 			'--include'=>$self->{request}->{include},
 			'--exclude'=>$self->{request}->{exclude},
 			@$data,
 		);
+		print STDERR ">>> OO.do_action.DOWNLOAD: \$r=$r (count=$count)\n";
+		if($r and $r>=$count) {
+			$self->{SUCCESS} = ($self->{SUCCESS} || 0) + 1;
+		}
 		return $count;
 	}
 	elsif($action eq 'DOWNLOADER') {
-			my $f_urls='urls.lst';
+			my $f_urls = $file || $self->{request}->{dbfile} || 'urls.lst';
 			my ($status,$count,$OUTDATE) = $self->write_database($f_urls,$data);
 			return $status unless($status);
 			use MyPlace::Program::Downloader;
 			my $mpd = new MyPlace::Program::Downloader;
-			$mpd->execute(
+			my ($r) = $mpd->execute(
 				'--input'=>$f_urls,
 				'--title'=>$response->{title},
 				'--retry',
 				'--include'=>$self->{request}->{include},
 				'--exclude'=>$self->{request}->{exclude},
 			);
+			print STDERR ">>> OO.do_action.DOWNLOADER: \$r=$r\n";
+			if($r and $r>=$count) {
+				$self->{SUCCESS} = ($self->{SUCCESS} || 0) + 1;
+			}
 			$self->{DATAS_COUNT} += $count;
 			if((!$ACTION_MODE{FORCE}) and $OUTDATE) {
 				$self->outdated();
@@ -755,8 +764,9 @@ sub do_action {
 			return $count;
 	}
 	if($action eq 'DATABASE') {
-		my $dbfile = $file || 'urls.lst';
+		my $dbfile = $file || $self->{request}->{dbfile} || 'urls.lst';
 		my ($status,$count,$OUTDATE) = $self->write_database($dbfile,$data);
+		$self->{SUCCESS} = ($self->{SUCCESS} || 0) + 1 if($count);
 		return $status unless($status);
 		#app_prompt($self->{msghd} . "Write $count lines to",$dbfile,"\n");
 		$self->{DATAS_COUNT} += $count;
@@ -774,7 +784,8 @@ sub do_action {
 		elsif(open FO,">",$file) {
             print FO @{$data};
             close FO;
-			print STDERR "[OK]\n"	
+			print STDERR "[OK]\n";	
+			$self->{SUCCESS} = ($self->{SUCCESS} || 0) + 1;
 		}
 		else {
 			app_error($self->{msghd}, 
