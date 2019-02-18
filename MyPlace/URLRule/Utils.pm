@@ -381,6 +381,9 @@ sub create_title {
 	$title =~ s/[-_\s]+$//;
 	$title =~ s/\s+/_/g;
 	$title =~ s/\s*\[email&#160;protected\]\s*//g;
+	if(length($title)>240) {
+		$title = substr($title,0,240);
+	}
 	return $title;
 }
 
