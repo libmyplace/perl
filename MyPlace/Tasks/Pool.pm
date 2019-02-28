@@ -32,7 +32,7 @@ sub more {
 			$main::MYSETTING->{$confkey} = $self->{position};
 			my @queue;
 			foreach(1 .. $left) {
-				push @queue,shift(@{$self->{tasks}});
+				push @queue,shift(@{$self->{tasks}}) if(@{$self->{tasks}});
 			}	
 			return @queue;
 		}
@@ -52,8 +52,8 @@ sub more {
 		$self->{restorable} = 0;
 		$index = $main::MYSETTING->{$confkey} || 0;
 		$self->{position} = $index;
-		if($index) {
-			@tasks = @tasks[$index .. $count];
+		if($index and $index<$count) {
+			@tasks = @tasks[$index .. ($count-1)];
 		}
 	}
 	else {
@@ -63,6 +63,7 @@ sub more {
 	if(@tasks) {
 		if(defined $self->{level}) {
 			foreach(@tasks) {
+				next unless($_);
 				$_->{level} = $self->{level};
 			}
 		}
@@ -231,6 +232,7 @@ sub collect_tasks {
 				$tn = MyPlace::Tasks::Task->new(@prefix,split(/\s*\t\s*/,$current,@suffix));
 			}
 			$tn->{options} = {%{$def->{options}}} if($def->{options});
+			#print STDERR $tn,"\n";
 			push @tasks,$tn;
 		}
 	}

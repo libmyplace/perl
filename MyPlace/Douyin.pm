@@ -13,6 +13,7 @@ BEGIN {
     @EXPORT         = qw();
     @EXPORT_OK      = qw(get_posts_from_url get_url get_info get_posts get_amemv_api get_favs);
 }
+use utf8;
 my $private_curl;
 #my $cookie = $ENV{HOME} . "/.curl_cookies.dat";
 sub get_curl {
@@ -50,6 +51,9 @@ my %p_id_maps = (
 	shortid=>"dyid",
 );
 
+use Encode qw/find_encoding/;
+my $utf8 = find_encoding("utf-8");
+
 sub get_info {
 	my $html = get_url(@_);
 	my %i;
@@ -85,16 +89,26 @@ sub get_info {
 		delete $i{$_};
 	}
 	#	my $u8 = Encode::find_encoding("utf-8");
-	foreach(qw/uname/) {
-		next unless($i{$_});
-		$i{$_} =~ s/^\@//;
-		$i{$_} = &extract_title($i{$_});
-	}
 	if($i{dyid}) {
 		$i{dyid} = &from_xdigit($i{dyid});
-		$i{dyid} =~ s/.*://;
-		$i{dyid} = &extract_title($i{dyid});
-		$i{dyid} =~ s/\s+//g;
+	}
+	foreach(qw/uname dyid/) {
+		next unless($i{$_});
+		$i{$_} =~ s/\s+//g;
+		$i{$_} =~ s/^\@//;
+		$i{$_} = &extract_title($i{$_});
+		$i{$_} =~ s/\s+//g;
+		$i{$_} =~ s/^\@//;
+		$i{$_} = $utf8->decode($i{$_});
+	}
+	$i{dyid} =~ s/^\s*抖音ID：// if($i{dyid});
+	$i{dyid} =~ s/^\s*抖音ID// if($i{dyid});
+	if($i{uname} and length($i{uname})<2) {
+		$i{uname} = $i{uname} . "_" . $i{dyid} if($i{dyid});
+	}
+	foreach(qw/uname dyid/) {
+		next unless($i{$_});
+		$i{$_} = $utf8->encode($i{$_});
 	}
 	$i{host} = "douyin.com";
 	$i{profile} = $i{uid};
@@ -102,6 +116,8 @@ sub get_info {
 	$i{aweme_id} = $i{itemId};
 	$i{uname} = $i{uname} || $i{dyid} || $i{uid};
 	$i{id2} = $i{dyid};
+	
+
 	my %s = (
 		%i,
 		posts=>[{%i}],
@@ -140,7 +156,9 @@ use JSON qw/decode_json/;
 sub safe_decode_json {
 	my $json = eval { decode_json($_[0]); };
 	if($@) {
+		die(join("\n",@_,$@),"\n");
 		print STDERR "Error deocding JSON text:$@\n";
+		print STDERR $_[0],"\n";
 		$@ = undef;
 		return {};
 	}

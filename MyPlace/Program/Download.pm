@@ -65,6 +65,7 @@ push @CURL,'--user-agent', $UA;
 
 my $DEFAULT_PROGRAM = 'wget';
 my @PROG = @CURL;
+my $HISTORY = $ENV{HOME} . "/" . "download.log";
 
 my %PROG_OPT_MAP = (
 	'curl'=>{
@@ -159,11 +160,19 @@ sub set {
 	push @{$self->{urls}},@_ if(@_);
 }
 
-sub log($$) {
+sub log {
     my $text=shift;
     my $fn=shift;
+	my $status = shift;
+	my $result = shift;
     open FO,">>",$fn or return;
-    print FO $text;
+	if($status) {
+		print FO "#" . scalar(localtime) . "  [$result]\n";
+		print FO $text,"\n";
+	}
+	else {
+	    print FO $text;
+	}
     close FO;
 }
 
@@ -546,6 +555,7 @@ sub _download {
 		}
 #		print STDERR "EXITVAL:$r\n";
 		if(!defined $r) {
+			&log("$url\t$saveas",$HISTORY,1,"ERROR");
 			app_error("\nExecuting \'" . join(" ",@cmdline) . "\'\nError: ",@data,"\n");
 			$exitval = 13;
 			next;
@@ -564,6 +574,7 @@ sub _download {
 				$exitval = 4;
 				next;
 			}
+			&log("$url\t$saveas",$HISTORY,1,"SUCCESS");
 		    &log("$url->$saveas\n","$DOWNLOADLOG") if($options->{log});
 		    app_ok "$name$saveas\t[Completed]\n" unless($options->{quiet});
 			$exitval = 0;
@@ -571,6 +582,7 @@ sub _download {
 		}
 		elsif($r==2) {
 #		    unlink $saveas_temp if(-f $saveas_temp);
+			&log("$url\t$saveas",$HISTORY,1,"KILLED");
 		    app_warning "$name$url\t[Killed]\n" unless($options->{quiet});
 			$exitval = 2;
 			#KILLED
@@ -578,6 +590,7 @@ sub _download {
 		}
 		else {
 #		    unlink $saveas_temp if(-f $saveas_temp);
+			&log("$url\t$saveas",$HISTORY,1,"FAILED");
 		    app_error "$name$url\t[Failed]\n" unless($options->{quiet});
 		    &log("$url->$saveas\n","$FAILLOG") if($options->{log});
 

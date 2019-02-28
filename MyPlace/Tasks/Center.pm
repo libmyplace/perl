@@ -222,6 +222,7 @@ sub more {
 					next unless($_);
 					next unless(ref $_);
 					push @queue,$_;
+					#use Data::Dumper;print STDERR Data::Dumper->Dump([$_],['$t']),"\n";
 					print STDERR "#L" . $nextlevel . "# Queuing< " . $_->to_string . "\n";
 				}
 				$self->queue($nextlevel,\@queue,$builder->{ON_TOP}) if(@queue);
@@ -507,6 +508,7 @@ sub load {
 			foreach(@{$self->{config}->{$sec . "::tasks"}}) {
 				next unless($_);
 				my $task = MyPlace::Tasks::Task->new_from_string($_);
+				print STDERR $task->to_string(),"\n";
 				#	print STDERR $_,"\n";
 				push @{$self->{tasks}->[$DEFAULT_TASKS_LEVEL]},$task;
 			}
@@ -516,7 +518,9 @@ sub load {
 			$self->{tasks}->[$level] = [];
 			foreach(@{$self->{config}->{$sec . "::tasks$level"}}) {
 				next unless($_);
-				push @{$self->{tasks}->[$level]},MyPlace::Tasks::Task->new_from_string($_);
+				my $task = MyPlace::Tasks::Task->new_from_string($_);
+				print STDERR $task->to_string(),"\n";
+				push @{$self->{tasks}->[$level]},$task;
 			}
 		}
 	}
