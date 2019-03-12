@@ -156,9 +156,9 @@ use JSON qw/decode_json/;
 sub safe_decode_json {
 	my $json = eval { decode_json($_[0]); };
 	if($@) {
-		die(join("\n",@_,$@),"\n");
+		#die(join("\n",@_,$@),"\n");
 		print STDERR "Error deocding JSON text:$@\n";
-		print STDERR $_[0],"\n";
+		print STDERR @_,"\n";
 		$@ = undef;
 		return {};
 	}
