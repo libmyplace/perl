@@ -242,6 +242,7 @@ sub new_response {
 		url=>$url,
 		rule=>$rule,
 		action=>$rule->{action},
+		link_mtm=>$result->{link_mtm},
 	);
 	if(!$result) {
 		$response{error} = "Rule defined, but return NOTHING";

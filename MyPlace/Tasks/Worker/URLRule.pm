@@ -500,8 +500,13 @@ sub work {
 		}
 		elsif("$hosts_o" eq "$HOSTS_FROM_URL") {
 		}
+		elsif($hosts_o eq 'FROMURL') {
+			$hosts_o = $HOSTS_FROM_URL;
+		}
+		elsif($HOSTS_FROM_URL && $hosts_o eq '*') {
+			$hosts_o = $HOSTS_FROM_URL;
+		}
 		elsif($hosts_o ne '*') {
-			$hosts_o = $hosts_o . ',' . $HOSTS_FROM_URL if($HOSTS_FROM_URL);
 		}
 		else {
 			my $target = $_[0]; #'Never undef';

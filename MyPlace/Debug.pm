@@ -4,7 +4,7 @@ BEGIN {
     our ($VERSION,@ISA,@EXPORT,@EXPORT_OK,%EXPORT_TAGS);
     $MyPlace::Debug::VERSION        = 1.00;
     @ISA            = qw(Exporter);
-	@EXPORT			= qw(&debug_log);
+	@EXPORT			= qw(&debug_log &debug_dump);
     @EXPORT_OK      = qw(&to_string &debug_log);
 }
 use strict;
@@ -75,5 +75,10 @@ sub debug_log {
 	print FO Data::Dumper::Dumper([\@_],['$INFO']),"\n";
 	close FO;
 	return @_;
+}
+
+sub debug_dump {
+	require Data::Dumper;
+	print STDERR Data::Dumper::Dumper([\@_],['$DEBUG']),"\n";
 }
 1;

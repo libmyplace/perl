@@ -177,10 +177,11 @@ sub read_m3u8_url {
 		else {
 			$_ = "$f_base2/$_";
 		}
-		if($_ =~ m/\.m3u8$/ or ($f_base1 =~ m/ahcdn\.com/ and $_ =~ m/\.mp4$/)) {
+		if($_ =~ m/(?:\.m3u8\?|\.m3u8$)/ or ($f_base1 =~ m/ahcdn\.com/ and $_ =~ m/\.mp4$/)) {
 			$idx++;
 			my $fn = $f_m3u;
 			$fn =~ s/\.m3u8$/_$idx.m3u8/;
+			$fn =~ s/\.m3u8\?.*$/_$idx.m3u8/;
 			push @urls,$self->read_m3u8_url($_,$fn);
 		}
 		else {
@@ -669,6 +670,12 @@ sub download {
 		$exit = $self->save_weipai($_);
 	}
 	#https://pl.dfdkmj.com//20181102/bpz5ojNu/1435kb/hls/index.m3u8
+	elsif(m/^(https?:\/\/.*m3u8\?[^\t]+)\t(.+)$/) {
+		$exit = $self->save_m3u8($1,$2);
+	}
+	elsif(m/^https?:\/\/.*m3u8\?.*/) {
+		$exit = $self->save_m3u8($_);
+	}
 	elsif(m/^(https?:\/\/.*m3u8)\t(.+)$/) {
 		$exit = $self->save_m3u8($1,$2);
 	}

@@ -88,6 +88,7 @@ sub new {
 		\&callback_applyRule,
 		$self
 	);
+	$self->{DATAS_COUNT} = 0;
 	return $self;
 }
 
@@ -136,16 +137,33 @@ sub apply{
 	return $self->applyRule($rule,$request);
 }
 
-sub request {
+sub new_request {
 	my $self = shift;
 	my $request = shift;
-	if(!ref $request) {
+	my $r = {};
+	my $reftype = ref $request;
+	#	print STDERR (Data::Dumper->Dump([$request],[qw/*request/]));
+	if(!$reftype) {
 		unshift @_,$request;
-		$request = {};
-		@{$request}{qw/url level action title progress/} = @_;
+		$r = {};
+		@{$r}{qw/url level action title progress/} = @_;
 	}
-	$request = {%{$self->{request}},%{$request}};
-	$request->{action} = 'COMMAND:echo' unless($request->{action});
+	elsif($reftype eq 'ARRAY') {
+		$r = {};
+		@{$r}{qw/url level action title progress/} = @$request;
+	}
+	else {
+		$r = $request;
+	}
+	#printf("%s = %s (%s)\n",'$r',$r,$reftype);
+	$r = {%{$self->{request}},%{$r}};
+	$r->{action} = 'COMMAND:echo' unless($r->{action});
+	return $r;
+}
+
+sub request {
+	my $self = shift;
+	my $request = $self->new_request(@_);
 	my $rule = parse_rule(@{$request}{qw/url level action/});
 	#print STDERR (Data::Dumper->Dump([$rule,$request],[qw/*rule *request/]));
 	return ($rule,$request);
@@ -298,13 +316,52 @@ sub autoApply2 {
 
 sub autoApply {
 	my $self = shift;
+	my $status;
+	my @TOTAL;
 	my $DIR_KEEP = getcwd;
-	my @DATAS;
+	my @reqs;
+	push @reqs,$self->new_request(@_);
+	while(@reqs) {
+		my $req = shift(@reqs);
+		#print STDERR (Data::Dumper->Dump([$req],[qw/*req/]));
+		#die();
+		if($req->{cwd}) {
+			$self->make_change_dir($req->{cwd});
+		}
+		#if($req->{title}) {
+		#	$self->make_change_dir($req->{title});
+		#}
+		($status,my $data,my @nr) = $self->process_request($req);
+		push @TOTAL,@$data if($data && ref $data);
+		if($self->{outdated}) {
+			$status =  2;
+			last;
+		}
+		my $cwd = getcwd();
+		foreach(@nr) {
+			$_->{cwd} = $cwd unless($_->{cwd});
+		}
+		unshift @reqs,@nr;
+	}
+	chdir $DIR_KEEP;
+	if($self->{options}->{no_data}) {
+		return $status,scalar(@TOTAL);
+	}
+	else {
+		return $status,@TOTAL;
+	}
+}
+
+
+sub process_request {
+	my $self = shift;
+	my $DIR_KEEP = getcwd;
+	my @DATA;
 	$self->{SUCCESS} = 0;
 	my ($rule,$res) = $self->request(@_);
 	$self->{levels}->{"done" . $rule->{level}} ||= 0;
 	$self->{levels}->{"done" . $rule->{level}} += 1;
-	return 2 if($self->{outdated});
+	return (2) if($self->{outdated});
 	$self->{msghd} = $self->progress . " L$rule->{level}>";
 	$self->{response} = undef;
 	$self->{callback_called} = undef;
@@ -312,7 +369,7 @@ sub autoApply {
 	if($self->{request}->{createdir} && $res->{title}) {
 		my $wd = _safe_path($res->{title});
 		if(!$self->make_change_dir($wd,'autoApply')) {
-			return undef;
+			return (undef);
 		}
 	}
 	app_prompt($self->{msghd} . 'URL' , $rule->{url},"\n");
@@ -335,23 +392,38 @@ sub autoApply {
 			app_error($self->{msghd},"Unknown error accoure\n");
 		}
 		chdir($DIR_KEEP);
-		return $status;
+		return ($status);
 	}
 	elsif($result->{failed}) {
 		app_error($self->{msghd},"Rule not working for $res->{url}\n");
 		chdir($DIR_KEEP);
-		return undef;
+		return (undef);
 	}
 	push @responses,$result if($status);
+	if($result->{wait}) {
+		my $sec = $result->{wait};
+		app_error(
+			$self->{msghd},
+			"Program will wait for $sec seconds...\n"
+		);
+		while($sec-- > 0) {
+			sleep 1;
+			print STDERR "\r" . $sec . "   ";
+		}
+		print STDERR "\r                   \r";
+	}
+	my $wd = getcwd;
+	my @requests;
 	foreach my $response (@responses) {
 		#if($response->{track_this}) {
 		#	die("Track this: \n\t" . join("\n\t",@{$response->{pass_data}},@{$response->{data}}),"\n")
 		#}
+		chdir $wd;
 		my(undef,@r) = $self->process($response,$rule);
-		push @DATAS,@r if(@r);
+		push @DATA,@r;
 		if($self->{outdated}) {
 			chdir $DIR_KEEP;
-			return 2;
+			return (2,\@DATA);
 		}
 		if($response->{nextlevel}) {
 			my %next = %{$response->{nextlevel}};
@@ -377,7 +449,6 @@ sub autoApply {
 			my $cwd = getcwd;
 			my $count = $next{count};
 			my $idx = $count;
-			my @requests;
 			foreach my $link (@{$next{data}}) {
 				my $linkname = undef;
 				if($link =~ m/^(.+)\s*\t\s*([^\t]+)$/) {
@@ -389,42 +460,14 @@ sub autoApply {
 					action=>$next{action},
 					url=>$link,
 					title=>$linkname,
+					cwd=>$cwd,
 				};
-#				$req->{progress} = ($res->{progress} || "");
-#				$req->{progress} .= "[$idx/$count]" unless($count == 1);
 				$idx--;
 				push @requests,$req;
 			}
-			if($self->{request}->{callback_nextlevels}) {
-				$self->{request}->{callback_nextlevels}(@requests);
-				chdir $cwd;
-			}
-			else {
-				foreach my $req (@requests) {
-					my(undef,@r) = $self->processNextLevel($req);
-					if(@r) {
-						push @DATAS,@r;
-					}
-					if($self->{outdated}) {
-						chdir $DIR_KEEP;
-						return 2;
-					}	
-					if($rule->{url} =~ m/weibo\.com/) {
-						my $sec = 10;
-						app_error(
-							$self->{msghd},
-							"Program will sleep for $sec seconds, avoiding blocked by weibo.com\n"
-						);
-						sleep $sec;
-					}
-					chdir($cwd);
-				}
-			}
 		}
-#		$self->{msghd} = "[Level $rule->{level}] ";
 	}
-	chdir($DIR_KEEP);
-	return 1,@DATAS;
+	return 1,\@DATA,@requests;
 }
 sub processNextLevel {
 	my $self = shift;
@@ -512,6 +555,11 @@ sub process {
 			return undef,$response->{data} ? @{$response->{data}} : ();
 		}
 	}
+	if($response->{link_mtm}) {
+		$self->makedir(".mtm") unless(-d ".mtm");
+		app_prompt($self->{msghd}, "Link .mtm/  <-" . $response->{link_mtm} . "\n" );
+		system("ln","-sf",$response->{link_mtm},".mtm/");
+	}
 	if(!$response->{count}) {
 		app_prompt($self->{msghd}, "Nothing to process" . ($response->{title} ? " for [$response->{title}]\n" : "\n" ));
 		return;
@@ -592,9 +640,9 @@ sub DUP_URL {
 
 sub get_url_id {
 	my $url = shift;
-	if($url =~ m/^http:\/\/[^\/]+\.sinaimg.cn/) {
+	if($url =~ m/^https?:\/\/[^\/]+\.sinaimg.cn/) {
 		$url =~ s/\s*\t.*$//;
-		$url =~ s/^http:\/\/[^\/]+\.sinaimg.cn/http:\/\/sinaimg.cn/;
+		$url =~ s/.*\///;
 	}
 	elsif($url =~ m/p\d*\.pstatp.com\/(large\/[^\/\s"&]+)\.jpe?g/) {
 		$url = "douyin:$1.jpg";

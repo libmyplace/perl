@@ -1,5 +1,5 @@
 #!/usr/bin/perl -w
-package MyPlace::URLRule::Utils;
+package MyPlace::WWW::Utils;
 use strict;
 use warnings;
 BEGIN {
@@ -177,7 +177,8 @@ sub get_url_wait
 {
 	my $sec = shift;
 	my $url = shift;
-	$sec = 10 unless($sec);
+	return get_url($url,'-v',@_) unless($sec);
+	$sec = 10 unless($sec>0);
 	print STDERR "Wait $sec seconds, for retriving $url ...\n";
 	while($sec-- > 0) {
 		sleep 1;
@@ -365,8 +366,8 @@ sub unescape_text {
 	require URI::Escape;
     $text = URI::Escape::uri_unescape($text);
 #    $text =~ s/[_-]+/ /g;
-    $text =~ s/[\:]+/, /g;
-    $text =~ s/[\\\<\>"\^\&\*\?]+//g;
+#    $text =~ s/[\:]+/, /g;
+#    $text =~ s/[\\\<\>"\^\&\*\?]+//g;
     $text =~ s/\s{2,}/ /g;
     $text =~ s/(?:^\s+|\s+$)//;
     return $text;
@@ -497,6 +498,7 @@ sub html2text {
 		s/\s+$//;
 		s/([\r\n]){2,}/$1/g;
 		next unless($_);
+		$_ = unescape_text($_);
 		push @r,$_;
 	}
 	if(wantarray) {
@@ -744,9 +746,9 @@ ___DESC___
 
 =head1  CHANGELOG
 
-    2012-01-18 23:52  xiaoranzzz  <xiaoranzzz@myplace.hell>
+    2019/11/3 xiaoranzzz  <xiaoranzzz@myplace.hell>
         
-        * file created.
+        * copied from MyPlace::URLRule::Utils.
 
 =head1  AUTHOR
 

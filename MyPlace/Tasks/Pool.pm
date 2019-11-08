@@ -218,6 +218,19 @@ sub collect_tasks {
 	my $self = shift;
 	my $def = shift;
 	app_message2 "Build tasks from [" . $def->{name} . "]\n";
+	my $now = time();
+	my $last = $self->{last};
+	if($last && (($now - $last)<30)) {
+		my $sec = 30 - abs($now - $last);
+		app_message2 "Wait $sec seconds for processing ...\n";
+		while($sec>0) {
+			sleep 1;
+			$sec --;
+			print STDERR "\r$sec  ";
+		}
+		print "\r     \r";
+	}
+	$self->{last} = time();
 	my @prefix = $def->{prefix} ? @{$def->{prefix}} : ();
 	my @suffix = $def->{suffix} ? @{$def->{suffix}} : ();
 	my @data = $self->_collect_data($def,$def->{data});

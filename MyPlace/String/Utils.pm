@@ -170,6 +170,39 @@ sub strtime2 {
 		$r[1] = 0;
 		$r[0] = 0;
 	}
+	elsif($r =~ m/前天/) {
+		@r = localtime(scalar(time())-2*24*3600);
+	}
+	elsif($r =~ m/昨天/) {
+		@r = localtime(scalar(time())-24*3600);
+	}
+	elsif($r =~ m/(?:a|one)\s+year\s+ago/) {
+		@r = localtime(scalar(time())-24*3600*30*365);
+	}
+	elsif($r =~ m/(\d+)(?:年前|\s+years?\s+ago)/) {
+		@r = localtime(scalar(time())-$1*24*3600*30*365);
+	}
+	elsif($r =~ m/(?:a|one)\s+month\s+ago/) {
+		@r = localtime(scalar(time())-24*3600*30);
+	}
+	elsif($r =~ m/(\d+)(?:个月前|\s+months?\s+ago)/) {
+		@r = localtime(scalar(time())-$1*24*3600*30);
+	}
+	elsif($r =~ m/(?:a|one)\s+day\s+ago/) {
+		@r = localtime(scalar(time())-24*3600);
+	}
+	elsif($r =~ m/(\d+)(?:天前|\s+days?\s+ago)/) {
+		@r = localtime(scalar(time())-$1*24*3600);
+	}
+	elsif($r =~ m/(\d+)(?:小时前|\s+hours?\s+ago)/) {
+		@r = localtime(scalar(time())-$1*3600);
+	}
+	elsif($r =~ m/(\d+)(?:分钟前|\s+minutes?\s+ago)/) {
+		@r = localtime(scalar(time())-$1*6);
+	}
+	elsif($r =~ m/(\d+)(?:秒前|\s+seconds?\s+ago)/) {
+		@r = localtime(scalar(time())-$1);
+	}
 	else {
 		return $str;
 	}

@@ -48,7 +48,7 @@ sub icmd_execute {
 		}
 		$cmds[$idx] = $data->{data};
 	}
-#	print STDERR "SYSTEM: " . join("\n",@cmds),"\n";
+	print STDERR "SYSTEM: " . join(" ",@cmds),"\n";
 	system(@cmds);
 #	exec(@cmds);
 }
