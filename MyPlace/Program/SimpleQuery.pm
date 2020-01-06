@@ -53,6 +53,7 @@ my @OPTIONS = qw/
 		item
 		images
 		videos
+		link_from=s
 /;
 
 sub new {
@@ -219,6 +220,17 @@ sub do_action {
 	foreach(@request) {
 		$idx++;
 		$_->{progress} = "[$idx/$count]";
+		if($OPTS->{createdir} && $OPTS->{link_from} && $_->{root_dir} && (!-d $_->{root_dir})) {
+			my $s = $OPTS->{link_from} . "/" . $_->{root_dir};
+			if(-d $s) {
+				if(system("which junction.exe")==0) {
+					system("junction.exe",$_->{root_dir},$s);
+				}
+				else {
+					system("ln","-sf","-T",$s,$_->{root_dir});
+				}
+			}
+		}
 		if($_->{root_dir}) {
 			show_directory($_->{root_dir});
 		}

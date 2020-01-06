@@ -60,7 +60,7 @@ my %DOWNLOADERS = (
 
 );
 
-my $BLOCKED_URLS = qr/vlook\.cn\/video\/high\/[^\/]+\.mp4$/;
+my $BLOCKED_URLS = qr/https?:(?:\/\/www\.|\/\/)(?:vlook\.cn)/;
 my $MAX_RETRY = 3;
 my %RETRIED;
 sub FAILED_RETRY {
@@ -513,6 +513,7 @@ sub save_urlrule {
 	my $self = shift;
 	my $url = shift;
 	my $title = shift;
+	my $exit = 0;
 	if($title) {
 		print STDERR "Downloading <$title>\n";
 		foreach($title,$title . ".ts") {
@@ -522,10 +523,19 @@ sub save_urlrule {
 			}
 		}
 	}
-	my $r = system("urlrule","--url","download",$url,@_);
-	print STDERR ">>> downloader.save_urlrule [\$r = $r]\n";
-	if($r == 0) {
-		return $self->EXIT_CODE("DONE");
+	use MyPlace::URLRule;
+	my ($status,$info) = MyPlace::URLRule::request($url);
+	if($info->{data}) {
+		foreach(@{$info->{data}}) {
+			my $r = $self->download($_);
+			$exit = $r if($r);
+		}
+		if(!$self->EXIT_NAME($exit)) {
+			$exit = $self->EXIT_CODE("UNKNOWN");
+		}
+	}
+	else {
+		return $self->EXIT_CODE("FAILED");
 	}
 	if($title) {
 		foreach($title,$title . ".ts") {
@@ -534,7 +544,7 @@ sub save_urlrule {
 			}
 		}
 	}
-	return $self->EXIT_CODE("FAILED");
+	return $exit;
 }
 
 use Cwd qw/getcwd/;

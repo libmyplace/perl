@@ -66,6 +66,61 @@ push @CURL,'--user-agent', $UA;
 my $DEFAULT_PROGRAM = 'wget';
 my @PROG = @CURL;
 my $HISTORY = $ENV{HOME} . "/" . "download.log";
+my $OPTIONS_FILE = ".download.rc";
+foreach(".download.rc","download/options.rc",".download/options.rc") {
+	if(-f $_) {
+		$OPTIONS_FILE  = $_;
+		last;
+	}
+	elsif(-f $ENV{HOME} . "/" . $_) {
+		$OPTIONS_FILE = $ENV{HOME} . "/" . $_;
+		last;
+	}
+}
+
+sub get_options {
+	my $url = shift;
+	return () unless(-f $OPTIONS_FILE);
+	my $options;
+	open FI,'<',$OPTIONS_FILE or return;
+	while(<FI>) {
+		chomp;
+		next unless(m/^options.\/([^\s]+)\/\s+=\s+(.+)$/);
+		my $rex = qr/$1/;
+		my $v = $2;
+		if($url =~ $rex) {
+			$options = $v;
+			last;
+		}
+	}
+	close FI;
+	if($options) {
+		my @r;
+		my $q1 = index($options,'"');
+		while($q1>=0) {
+			my $q2 = index($options,'"',$q1+1);
+			#print STDERR "options = $options\nq1=$q1\nq2=$q2\n";
+			if($q2>=0) {
+				foreach(split(/\s+/,substr($options,0,$q1))) {
+					push @r,$_ if($_);
+				}
+				push @r,substr($options,$q1+1,($q2-$q1-1));
+				$options = substr($options,$q2+1);
+				$q1 = index($options,'"');
+			}
+			else {
+				last;
+			}
+			#print STDERR "options = $options\nq1=$q1\nq2=$q2\n";
+		}
+		return @r unless($options);
+		foreach(split(/\s+/,$options)) {
+			push @r,$_ if($_);
+		}
+		return @r;
+	}
+	return ();
+}
 
 my %PROG_OPT_MAP = (
 	'curl'=>{
@@ -184,7 +239,7 @@ sub build_cmdline {
     my @result;
 	push @result,prog_get($name);
 	push @result,prog_set("--url",$url);
-	push @result,prog_set("--referer",$OPTS{referer} || $url);
+	push @result,prog_set("--referer",$OPTS{referer}) if($OPTS{referer});
     push @result,prog_set("--output",$saveas) if($saveas);
 	push @result,prog_set("--post",$OPTS{post}) if($OPTS{post});
 	if($OPTS{cookie}) {
@@ -204,7 +259,9 @@ sub build_cmdline {
 }
 
 sub _process {
-    my $taskname=shift;
+    my $name=shift;
+	my $url = shift;
+	my $taskname = "$name$url";
     my $cmdline=shift;
     my $retry = shift(@_) || 0;
     my $r=0;
@@ -228,6 +285,7 @@ sub _process {
 #		$r = $?;
 #		print STDERR "Execute: ",join(" ",@{$cmdline},'-o',$output),"\n";
         my @call = (@{$cmdline},prog_set('--output',$output));
+		push @call,get_options($url);
 		#print STDERR "Execute: ",join(" ",@call),"\n";
         $r=system(@call);
 		if($r == 0) {
@@ -549,7 +607,7 @@ sub _download {
 				$maxtry = 2;
 			}
 		}
-		my ($r,@data)=_process("$name$url",\@cmdline,$maxtry);
+		my ($r,@data)=_process($name,$url,\@cmdline,$maxtry);
 		if(defined $self->{reportor}) {
 			$self->{reportor}->($self->{reportor_data},$url,$r);
 		}

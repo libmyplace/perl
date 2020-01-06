@@ -249,6 +249,21 @@ sub additem {
 	});
 }
 
+sub getitem {
+	my $self = shift;
+	my $key = shift;
+	if(!$key) {
+		return undef,"Empty key not allowed";
+	}
+	if(!$self->{info}) {
+		return undef,"No such item";
+	}
+	if(defined $self->{info}->{$key}) {
+		return 1,@{$self->{info}->{$key}};
+	}
+	return undef,"NO such item";
+}
+
 sub add {
 	my $self = shift;
 	my ($r,$msg) = $self->_parse_from_text(@_);
@@ -257,6 +272,7 @@ sub add {
 	}
 	return $self->_add($r);
 }
+
 
 sub _add {
 	my $self = shift;

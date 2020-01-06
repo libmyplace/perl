@@ -178,7 +178,7 @@ sub runonce {
 	my $self = shift;
 	$self->{runonce} = 1;
 	if(@_) {
-		$self->queue(MyPlace::Tasks::Task->new(@_));
+		$self->queue(100,MyPlace::Tasks::Task->new(@_),1)
 	}
 }
 

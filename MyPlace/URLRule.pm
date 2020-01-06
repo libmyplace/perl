@@ -270,6 +270,7 @@ sub new_response {
 			elsif($result->{info} && ref $result->{info} && (ref $result->{info} eq 'HASH')) {
 				foreach(keys %{$result->{info}}) {
 					my $k = $_;
+					next if(ref $result->{info}->{$k});
 					my $v = $result->{info}->{$k} || "";
 					$k =~ s/[\r\n]+/\\n/g;
 					$v =~ s/[\r\n]+/\\n/g;
@@ -311,6 +312,7 @@ sub new_response {
 			delete $response{$_} unless(defined $response{$_});
 		}
 	}
+	#delete($response{info}) unless($rule->{options} && $rule->{options}->{info});
 	if($response{error}) {
 		return undef,\%response;
 	}

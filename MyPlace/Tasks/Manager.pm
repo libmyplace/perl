@@ -166,6 +166,12 @@ sub get_key {
 	elsif($str =~ m/aweme\.snssdk\.com\/aweme\/.*\?video_id=([^\s&"]+)/) {
 		$str = "douyin:$1.mp4";
 	}
+	elsif(m/(https?:\/\/f\.video\.weibocdn\.com)\/.*ssig=([^&]+)/) {
+		$str = "$1/$2";
+	}
+	elsif(m/(https?:\/\/f\.video\.weibocdn\.com)\/([^&\?]+)/) {
+		$str = "$1/$2";
+	}
 	$str =~ s/(?:\t| {3,}).+$//;
 	#print "$str\n";
 	return $str;

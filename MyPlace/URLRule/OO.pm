@@ -558,7 +558,7 @@ sub process {
 	if($response->{link_mtm}) {
 		$self->makedir(".mtm") unless(-d ".mtm");
 		app_prompt($self->{msghd}, "Link .mtm/  <-" . $response->{link_mtm} . "\n" );
-		system("ln","-sf",$response->{link_mtm},".mtm/");
+		system("ln","-s",$response->{link_mtm},".mtm/");
 	}
 	if(!$response->{count}) {
 		app_prompt($self->{msghd}, "Nothing to process" . ($response->{title} ? " for [$response->{title}]\n" : "\n" ));
@@ -643,6 +643,7 @@ sub get_url_id {
 	if($url =~ m/^https?:\/\/[^\/]+\.sinaimg.cn/) {
 		$url =~ s/\s*\t.*$//;
 		$url =~ s/.*\///;
+		$url =~ s/\?.*$//;
 	}
 	elsif($url =~ m/p\d*\.pstatp.com\/(large\/[^\/\s"&]+)\.jpe?g/) {
 		$url = "douyin:$1.jpg";
@@ -655,6 +656,14 @@ sub get_url_id {
 	}
 	return $url;
 }
+
+	sub get_filename {
+		my $url = shift;
+		$url =~ s/\t+.*$//;
+		$url =~ s/\?.*$//;
+		$url =~ s/^.*\///;
+		return $url;
+	}
 
 	sub write_database {
 		my $self = shift;
@@ -674,6 +683,7 @@ sub get_url_id {
 		}
 		app_prompt($self->{msghd} . "Write data to database",$f_urls,"\n");
 		my %records;
+		my %done;
 		if(-f $f_urls) {
 			if(open FI,'<',$f_urls) {
 				foreach my $line(<FI>) {
@@ -692,15 +702,31 @@ sub get_url_id {
 				return undef;
 			}
 		}
+		if(-f ".mtm/done.txt") {
+			if(open FI,"<",".mtm/done.txt") {
+				foreach(<FI>) {
+					chomp;
+					$done{get_filename($_)}=1;
+				}
+				close FI;
+			}
+		}
 		if(open FO,'>>',$f_urls) {
 			foreach my $url(@{$data}) {
 				my $id = get_url_id($url);
-				if($records{$id}) {
+				my $filename = get_filename($url);
+				if($done{$filename} or -f $filename) {
+					next;
+				}
+				elsif($records{$id}) {
 					if($url =~ m/weishi\.com|weishi_pic/) {
 						$OUTDATE = 1;
 						last;
 					}
 					next;
+				}
+				elsif($url =~ m/f\.video\.weibocdn\.com/ and $url =~ m/\t\s*(.+?)\s*$/) {
+					next if($records{$1} or -f $1);
 				}
 				print FO $url,"\n";
 				$OUTDATE = 0;

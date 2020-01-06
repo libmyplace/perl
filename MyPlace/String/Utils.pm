@@ -146,9 +146,10 @@ sub strtime2 {
 		return undef;
 	}
 	elsif($r =~ m/(\w\w\w) (\d+) (\d+):(\d+):(\d+) \+(\d+) (\d+)$/) {
+		# Sun Jan 27 14:44:06 +0800 2019
 		$r[5] = $7;
 		my $m = $MONTHMAP{ucfirst($1)};
-		$r[4] = $m ? $m : $c[1];
+		$r[4] = defined($m) ? $m : $c[4];
 		$r[3] = +$2 - 0;
 		$r[2] = +$3 - 0;
 		$r[1] = +$4 - 0;
@@ -177,28 +178,47 @@ sub strtime2 {
 		@r = localtime(scalar(time())-24*3600);
 	}
 	elsif($r =~ m/(?:a|one)\s+year\s+ago/) {
-		@r = localtime(scalar(time())-24*3600*30*365);
+		@r = (0,0,0,0,0,$c[5]-1);
 	}
 	elsif($r =~ m/(\d+)(?:年前|\s+years?\s+ago)/) {
-		@r = localtime(scalar(time())-$1*24*3600*30*365);
+		@r = (0,0,0,0,0,$c[5]-$1);
 	}
 	elsif($r =~ m/(?:a|one)\s+month\s+ago/) {
-		@r = localtime(scalar(time())-24*3600*30);
+		if($c[4]-1<0) {
+			@r = (0,0,0,0,12+$c[4]-1,$c[5]-1);
+		}
+		else {
+			@r = (0,0,0,0,$c[4]-1,$c[5]);
+		}
 	}
 	elsif($r =~ m/(\d+)(?:个月前|\s+months?\s+ago)/) {
-		@r = localtime(scalar(time())-$1*24*3600*30);
+		if($c[4]-$1<0) {
+			@r = (0,0,0,0,12+$c[4]-$1,$c[5]-1);
+		}
+		else {
+			@r = (0,0,0,0,$c[4]-$1,$c[5]);
+		}
 	}
 	elsif($r =~ m/(?:a|one)\s+day\s+ago/) {
 		@r = localtime(scalar(time())-24*3600);
+		$r[0] = 0;
+		$r[1] = 0;
+		$r[2] = 0;
 	}
 	elsif($r =~ m/(\d+)(?:天前|\s+days?\s+ago)/) {
 		@r = localtime(scalar(time())-$1*24*3600);
+		$r[0] = 0;
+		$r[1] = 0;
+		$r[2] = 0;
 	}
 	elsif($r =~ m/(\d+)(?:小时前|\s+hours?\s+ago)/) {
 		@r = localtime(scalar(time())-$1*3600);
+		$r[0] = 0;
+		$r[1] = 0;
 	}
 	elsif($r =~ m/(\d+)(?:分钟前|\s+minutes?\s+ago)/) {
 		@r = localtime(scalar(time())-$1*6);
+		$r[0] = 0;
 	}
 	elsif($r =~ m/(\d+)(?:秒前|\s+seconds?\s+ago)/) {
 		@r = localtime(scalar(time())-$1);

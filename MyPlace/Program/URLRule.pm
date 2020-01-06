@@ -570,10 +570,6 @@ my %URL_EXPS = (
 		'([^\.]+)\.taobao\.com',
 		'$1',undef,'shop.taobao.com',
 	],
-	'[^\.]+\.poco\.cn'=> [
-		'([^\.]+)\.poco\.cn',
-		'$1',undef,'poco.cn',
-	],
 	'blog\.sina\.com\.cn\/'=> [
 		'blog\.sina\.com\.cn\/([^?&]+)',
 		'$1',undef,'blog.sina.com.cn',
@@ -600,7 +596,7 @@ sub parse_url {
 		require MyPlace::URLRule;
 		my $rule = MyPlace::URLRule::parse_rule($url,":info");
 		my ($status,$result) = apply_rule($rule);
-		print $result->{profile},"\n";
+		#print STDERR $result->{profile},"\n";
 		if($status and $result->{profile}) {
 			return 1,$result;
 		}
@@ -643,6 +639,7 @@ sub CMD_ADD {
 		$id = undef;
 	}
 	if((!$host) or ($url and $url =~ m/^http/)) {
+		p_msg "Extract information from $url ...\n";
 		my ($r,$result) = parse_url($url);
 		if($r) {
 			if($result->{profile}) {
@@ -699,7 +696,12 @@ sub CMD_ADD {
 
 	if($self->{USQ}) {
 		printf STDERR "%12s %s\n",'[HOSTS]', "Add $id -> $name <$OPTS->{hosts}>";
-		 my ($count,$msg) = $self->{USQ}->additem($id,$name);
+		my ($count,@items) = $self->{USQ}->getitem($id);
+		if($count) {
+			$name = join("\t",@{$items[0]});
+			printf STDERR "%12s %s\n",'[DEFINED]',"Add $id -> $name <$OPTS->{hosts}>";
+		}
+		 ($count,my $msg) = $self->{USQ}->additem($id,$name);
 #		 print STDERR "\t$msg\n" if($msg);
 		 if($count) {
 			 $self->{USQ}->save();

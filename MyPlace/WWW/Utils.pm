@@ -16,6 +16,7 @@ BEGIN {
 		&url_getname
 		&url_getfull
 		&get_safename
+		&extract_meta
 	);
     @EXPORT_OK      = qw(
 		&new_file_data
@@ -34,6 +35,7 @@ BEGIN {
 		&encode
 		&from_to
 		&create_torrent_title
+		&extract_meta
 	);
 }
 use Encode qw/from_to decode encode/;
@@ -369,7 +371,8 @@ sub unescape_text {
 #    $text =~ s/[\:]+/, /g;
 #    $text =~ s/[\\\<\>"\^\&\*\?]+//g;
     $text =~ s/\s{2,}/ /g;
-    $text =~ s/(?:^\s+|\s+$)//;
+	$text =~ s/^\s+//g;
+	$text =~ s/\s+$//g;
     return $text;
 }
 sub create_title {
@@ -393,13 +396,13 @@ sub create_title {
 	$title =~ s/^[\s!*?#~&^+_\-]*//g;
 	$title =~ s/[\s!*?#~&^+_\-]*$//g;
 	$title =~ s/^\[?www\.\w+\.\w+\]?//;
-	$title =~ s/^[-_\s]+//;
-	$title =~ s/[-_\s]+$//;
 	$title =~ s/\s+/_/g;
 	$title =~ s/\s*\[email&#160;protected\]\s*//g;
 	if(length($title)>240) {
 		$title = substr($title,0,240);
 	}
+	$title =~ s/^[-_\s]+//;
+	$title =~ s/[-_\s]+$//;
 	return $title;
 }
 
@@ -725,6 +728,23 @@ sub get_url_redirect {
 		print STDERR "ERROR, No URL redirection\n" unless($rurl);
 	}
 	return $rurl;
+}
+
+sub extract_meta {
+	my $data = shift;
+	if(!ref $data) {
+		unshift @_,$data;
+		$data = {};
+	}
+	my $line = join("",@_);
+	while($line =~ m/(<meta[^>]+property="([^"]+)"[^>]+>)/g) {
+		my $meta = $1;
+		my $name = $2;
+		if($meta =~ m/content="([^"]+)/) {
+			$data->{$name} = $1;
+		}
+	}
+	return $data;
 }
 
 1;

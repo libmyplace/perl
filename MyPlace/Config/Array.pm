@@ -65,7 +65,23 @@ sub readfile {
 	my $self = shift;
 	my $filename = shift;
 	$self->{lastfile} = $filename;
-	return unless(-f $filename);
+	if(-d $filename) {
+		$filename =~ s/[\/\\]+$//;
+		if(opendir(my $dh,$filename)) {
+			my @text;
+			while(readdir $dh) {
+				next if($_ eq '.' or $_ eq '..');
+				my $text = $_;
+				$text =~ s/^#+//;
+				$self->add("$filename/$_",$text);	
+			}
+			close $dh;
+			return;
+		}
+		else {
+			print STDERR  "Error open $filename: $!\n";
+		}
+	}
 	if(open FI,'<',$filename) {
 		$self->readtext(<FI>);
 		close FI;
@@ -118,11 +134,21 @@ sub writefile {
 
 sub add {
 	my $self = shift;
-	my @current = @_;
-	return unless(@current);
-	push @{$self->{data}},[@current];
-	push @{$self->{keys}},$current[0];
-	$self->{index}->{$current[0]}=$#{$self->{data}};
+	return unless(@_);
+	my @args;
+	foreach(@_) {
+		push @args,split(/\s*[,\r\n]+\s*/,$_);
+	}
+	my $key = $args[0];
+	my $idx = $self->{index}->{$key};
+	if(defined $idx) {
+		$self->{data}->[$idx] = [@args];
+	}
+	else {
+		push @{$self->{data}},[@args];
+		$self->{index}->{$key} = $#{$self->{data}};
+		push @{$self->{keys}},$key;
+	}
 	$self->{_DIRTY} = 1;
 	return $self;
 }

@@ -48,7 +48,12 @@ sub download {
 	}
 	my $data = $result->{download};
 	if(!$data) {
-		print STDERR "No downloads found on page: $url\n";
+		if($result->{error}) {
+			print STDERR $result->{error},"\n";
+		}
+		else {
+			print STDERR "No downloads found\n";
+		}
 		return $self->EXIT_CODE('ERROR');
 	}
 	

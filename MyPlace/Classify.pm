@@ -28,12 +28,31 @@ sub read_rules {
 	my $A = new MyPlace::Config::Array;
 	foreach my $file (split(/\s*,\s*/,$filelist)) {
 		my $RULE_FILE = $file;
-		if(!-f $RULE_FILE) {
-			$RULE_FILE .= ".rule";
+		if(-d $RULE_FILE) {
 		}
-		if(!-f $RULE_FILE) {
-			print STDERR "Rule <$file> not exists\n";
-			next;
+		else {
+			use File::Spec::Functions qw/catfile/;
+			my @data_dir = ("",$ENV{HOME} . "/");
+			my $file = $RULE_FILE;
+			foreach my $prefix (@data_dir) {
+				foreach my $dir("",".classify/") { 
+					foreach my $suffix("",".rule",".lst") {
+						my $f = $prefix . $dir . $RULE_FILE . $suffix;
+						if(-f $f) {
+							$file = $f;
+							last;
+						}
+					}
+					last if(-f $file);
+				}
+				last if(-f $file);
+			}
+			
+			if(!-f $file) {
+				print STDERR "Rule <$file> not exists\n";
+				next;
+			}
+			$RULE_FILE = $file;
 		}
 		print STDERR "Rules reading from <$RULE_FILE>\n";
 		$A->readfile($RULE_FILE);

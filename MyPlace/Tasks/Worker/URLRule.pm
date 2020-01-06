@@ -363,6 +363,7 @@ sub work {
 	my @USQ_OPTS_GROUP2 = (qw/
 		include
 		execlude
+		link_from
 	/);
 	foreach(@USQ_OPTS_GROUP1) {
 		if(defined $WORKER_OPTS{$_}) {

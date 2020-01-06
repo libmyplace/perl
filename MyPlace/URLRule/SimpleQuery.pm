@@ -134,6 +134,29 @@ sub new {
 	return $self;
 }
 
+sub getitem {
+	my $self = shift;
+	my $total = 0;
+	my @items;
+	my @error;
+	if($self->{db}) {
+		foreach my $dbname (keys %{$self->{db}}) {
+			my ($count,@item) = $self->{db}->{$dbname}->getitem(@_);
+			if($count) {
+				$total += $count;
+				push @items,[@item];
+			}
+			#else {
+			#	print STDERR "[database:$dbname] @item\n";
+			#}
+		}
+		return $total,@items;
+	}
+	else {
+		return undef,"NO database loaded"; 
+	}
+}
+
 sub additem {
 	my $self = shift;
 	my $total = 0;
