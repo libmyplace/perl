@@ -316,40 +316,42 @@ sub autoApply2 {
 
 sub autoApply {
 	my $self = shift;
-	my $status;
-	my @TOTAL;
+	my $COUNT = 0;
 	my $DIR_KEEP = getcwd;
-	my @reqs;
-	push @reqs,$self->new_request(@_);
-	while(@reqs) {
-		my $req = shift(@reqs);
-		#print STDERR (Data::Dumper->Dump([$req],[qw/*req/]));
-		#die();
-		if($req->{cwd}) {
-			$self->make_change_dir($req->{cwd});
+	my $req = $self->new_request(@_);
+	my ($status,$result,$data,@nr) = $self->process_request($req);
+	if((!$status) && ref $data) {
+		if($data->{error}) {
+			print STDERR "Error: $data->{error}\n";
+			chdir $DIR_KEEP;
+			return $status,$COUNT;
 		}
-		#if($req->{title}) {
-		#	$self->make_change_dir($req->{title});
-		#}
-		($status,my $data,my @nr) = $self->process_request($req);
-		push @TOTAL,@$data if($data && ref $data);
+		if($data->{killme}) {
+			print STDERR "Killing processes ...\n";
+			chdir $DIR_KEEP;
+			return $status,$COUNT;
+		}
+	}
+	$COUNT = $COUNT + scalar(@$data) if($data && ref $data);
+	my $cwd = getcwd();
+	foreach(@nr) {
+		chdir $cwd;
 		if($self->{outdated}) {
-			$status =  2;
-			last;
+			if($req->{title} or ($result and $result->{title})) {
+				$self->{outdated}=undef;
+			}
+				last;
 		}
-		my $cwd = getcwd();
-		foreach(@nr) {
-			$_->{cwd} = $cwd unless($_->{cwd});
-		}
-		unshift @reqs,@nr;
+		($status,my $count) = $self->autoApply($_);
+		$COUNT = $COUNT + $count;
 	}
+		if($self->{outdated}) {
+			if($req->{title} or ($result and $result->{title})) {
+				$self->{outdated}=undef;
+			}
+		}
 	chdir $DIR_KEEP;
-	if($self->{options}->{no_data}) {
-		return $status,scalar(@TOTAL);
-	}
-	else {
-		return $status,@TOTAL;
-	}
+	return $status,$COUNT;
 }
 
 
@@ -361,7 +363,7 @@ sub process_request {
 	my ($rule,$res) = $self->request(@_);
 	$self->{levels}->{"done" . $rule->{level}} ||= 0;
 	$self->{levels}->{"done" . $rule->{level}} += 1;
-	return (2) if($self->{outdated});
+	#return (2) if($self->{outdated});
 	$self->{msghd} = $self->progress . " L$rule->{level}>";
 	$self->{response} = undef;
 	$self->{callback_called} = undef;
@@ -392,7 +394,7 @@ sub process_request {
 			app_error($self->{msghd},"Unknown error accoure\n");
 		}
 		chdir($DIR_KEEP);
-		return ($status);
+		return ($status,$result);
 	}
 	elsif($result->{failed}) {
 		app_error($self->{msghd},"Rule not working for $res->{url}\n");
@@ -418,12 +420,17 @@ sub process_request {
 		#if($response->{track_this}) {
 		#	die("Track this: \n\t" . join("\n\t",@{$response->{pass_data}},@{$response->{data}}),"\n")
 		#}
+		if($response->{error} and $response->{killme}) {
+			return (-1,$response);
+		}
 		chdir $wd;
 		my(undef,@r) = $self->process($response,$rule);
 		push @DATA,@r;
 		if($self->{outdated}) {
-			chdir $DIR_KEEP;
-			return (2,\@DATA);
+			if($response->{title}) {
+				$self->{outdated} = undef;
+				next;
+			}
 		}
 		if($response->{nextlevel}) {
 			my %next = %{$response->{nextlevel}};
@@ -467,7 +474,7 @@ sub process_request {
 			}
 		}
 	}
-	return 1,\@DATA,@requests;
+	return 1,$result,\@DATA,@requests;
 }
 sub processNextLevel {
 	my $self = shift;

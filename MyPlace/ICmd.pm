@@ -48,7 +48,7 @@ sub icmd_execute {
 		}
 		$cmds[$idx] = $data->{data};
 	}
-	print STDERR "SYSTEM: " . join(" ",@cmds),"\n";
+	print STDERR " :" . join(" ",@cmds),"\n";
 	system(@cmds);
 #	exec(@cmds);
 }
@@ -83,6 +83,24 @@ sub icmd_parse {
 		cmd=>$cmd,
 		args=>@words ? [@words] : undef,
 	};
+
+	my $UCMD = uc($cmd);
+	my %SYS_COMMAND = (
+		'RM'=>['end','rm','-v'],
+		'RMDIR'=>['end','rmdir','-v'],
+		'MKDIR'=>['end','mkdir','-v'],
+		'MV'=>['-1','mv','-v','--','%N'],
+		'LS'=>['end','ls','-l'],
+	);
+	foreach(keys %SYS_COMMAND) {
+		if($UCMD eq $_) {
+			my ($pos,@cmds) = @{$SYS_COMMAND{$_}};
+			$state->{pos} = $pos || '-1';
+			MyPlace::ICmd::icmd_execute($state,@cmds,@words);
+			$state->{exit} = 1;
+			last;
+		}
+	}
 	return $state;
 }
 
@@ -169,13 +187,6 @@ my %SHORT_COMMAND = (
 	'D'=>'DATA',
 	'L'=>'LOAD',
 );
-my %SYS_COMMAND = (
-	'RM'=>['end','rm','-v'],
-	'RMDIR'=>['end','rmdir','-v'],
-	'MKDIR'=>['end','mkdir','-v'],
-	'MV'=>['-1','mv','-v','--','%N']
-);
-
 sub internal_process {
 #	message "[PRE_PROCESS] " . join(" ",@_),"\n";
 	my $UCMD = shift;
@@ -231,15 +242,6 @@ sub internal_process {
 		foreach(qw/QUIT EXIT/) {
 			if($UCMD eq $_) {
 				return 'exit ' . ($_[0] || 0) . ";";
-			}
-		}
-		foreach(keys %SYS_COMMAND) {
-			if($UCMD eq $_) {
-				my ($pos,@cmds) = @{$SYS_COMMAND{$_}};
-				my $state = MyPlace::ICmd::icmd_parse("<$DATA>",@cmds,@_);
-				$state->{pos} = $pos || '-1';
-				MyPlace::ICmd::icmd_execute($state,$state->{cmd},($state->{args} ? @{$state->{args}}: ()));
-				return 1;
 			}
 		}
 	}

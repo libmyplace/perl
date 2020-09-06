@@ -10,7 +10,7 @@ package MyPlace::URLRule;
 use URI;
 use URI::Escape;
 use MyPlace::Script::Message;
-use MyPlace::URLRule::Utils qw/&get_url &parse_pages/;
+use MyPlace::WWW::Utils qw/&get_url &parse_pages/;
 use Cwd qw/abs_path getcwd/;
 use strict;
 
@@ -465,6 +465,14 @@ sub get_handler {
 
 sub request {
 	my $arg1 = shift;
+	my $arg2 = shift;
+	my $opts;
+	if($arg2 && ref $arg2) {
+		$opts = $arg2;
+	}
+	else {
+		unshift @_,$arg2;
+	}
 	my @args = @_;
 	my $rule;
 	if(!ref $arg1) { 
@@ -478,6 +486,9 @@ sub request {
 	if($handler->{error}) {
 		print STDERR "Error: ",$handler->{error},"\n";
 		return 0;
+	}
+	if($opts) {
+		$handler->{options} = $opts;
 	}
 #	my $request = $rule;
 	my $request = (@args > 0) ? parse_rule(@args) : $rule;

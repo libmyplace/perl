@@ -381,7 +381,7 @@ sub CMD_DOWNLOAD {
 	my $count = 0;
 	my %r;
 	if($OPTS{URL}) {
-		return $self->CMD_ACTION('DOWNLOAD',@target);
+		return $self->CMD_ACTION('DOWNLOADER',@target);
 	}
 	$self->CMD_ACTION('DATABASE',@target);
 	use MyPlace::Program::Downloader;

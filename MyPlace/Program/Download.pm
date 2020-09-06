@@ -26,8 +26,9 @@ my @OPTIONS = qw/
 		directory|d
 		name|n=s
 		cookie|b:s
+		no-cookie|nc
 		log|l
-		refurl|r=s
+		referer|refurl|r=s
 		autoname|a
 		program|p=s
 		force|f
@@ -63,7 +64,8 @@ $UA = 'Mozilla/5.0 (Android 9.0; Mobile; rv:63.0) Gecko/63.0 Firefox/63.0';
 push @WGET,'--user-agent',$UA;
 push @CURL,'--user-agent', $UA;
 
-my $DEFAULT_PROGRAM = 'wget';
+my $DOWNLOAD_COOKIE_DEFAULT = $ENV{HOME} . "/.curl_cookies.dat";
+my $DEFAULT_PROGRAM = 'curl';
 my @PROG = @CURL;
 my $HISTORY = $ENV{HOME} . "/" . "download.log";
 my $OPTIONS_FILE = ".download.rc";
@@ -133,7 +135,7 @@ my %PROG_OPT_MAP = (
 	'wget'=>{
 		'--saveas'=>'--output-document',
 		"--cookie"=>"--save-cookie",
-		"--cookie-jar"=>"--load--cookie",
+		"--cookie-jar"=>"--load-cookie",
 		"--max-time"=>"--read-timeout",
 		"--output"=>"--output-document",
 		"--url"=>'IGNORED',
@@ -387,7 +389,12 @@ sub download {
 		return 3;
 	}
 	my $exitval;
-	
+	if($OPT->{"no-cookie"}) {
+		$OPT->{cookie} = '';
+	}
+	elsif(!$OPT->{cookie}) {
+		$OPT->{cookie} = $DOWNLOAD_COOKIE_DEFAULT;
+	}
 	my @urls;
 	push @urls, @{$self->{urls}} if($self->{urls});
 	push @urls,$OPT->{url} if($OPT->{url});
@@ -542,8 +549,25 @@ sub _download {
 		next unless($_);
 		my $url = $_;
 		my $saveas = $options->{saveas};
+		if($saveas) {
+			my @dirs = split(/[\/\\]+/,$saveas);
+			my $cur = "";
+			pop @dirs;
+			foreach(@dirs) {
+				$cur = $cur . $_;
+				if(!-d $cur) {
+					if(mkdir $cur) {
+						print STDERR "Create directory $cur\n";
+					}
+					else {
+						print STDERR "Create directory $cur FAILED\n";
+						last;
+					}
+				}
+			}
+		}
 		($exitval,$url,$saveas) = $self->_get_url($options,$url,$saveas);
-		my $refer=$options->{refurl} || $url;
+		my $refer=$options->{referer};# || $url;
 		my $name= $options->{"name"} || "";
 		$idx++;
 		$name = "${name}[$idx/$count]" if($count>1);
@@ -706,7 +730,7 @@ Create directories if necessary
 
 Name downloading session
 
-=item B<--refurl>,B<-r>
+=item B<--referer>,B<-r>
 
 Set referer URL
 

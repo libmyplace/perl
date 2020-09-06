@@ -55,4 +55,33 @@ sub apply {
 	return MyPlace::URLRule::new_response($url,$info,\%result);
 }
 
+sub get_print {
+	my $self = shift;
+	my $value = shift;
+	my $key = shift;
+	my $store = shift;
+	unless(defined $key) {
+		print STDERR "  Get: $value\n";
+		return $value;
+	}
+	unless(defined $store) {
+		print STDERR "  Get <$key>: $value\n";
+		return $value;
+	}
+	my $t = ref $store;
+	if($t eq 'HASH') {
+		print STDERR " Get $key => $value\n";
+		$store->{$key} = $value;
+		return $value;
+	}
+	elsif($t eq 'ARRAY') {
+		print STDERR " Push $key:$value\n";
+		push @$store,$value;
+		return $value;
+	}
+	print STDERR "  Get <$key>: $value\n";
+	print STDERR "    " . join(", ",$store,@_),"\n";
+	return $value;
+}
+
 1;

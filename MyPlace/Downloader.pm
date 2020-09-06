@@ -11,6 +11,31 @@ BEGIN {
 use strict;
 use warnings;
 use base 'MyPlace::Program';
+use MyPlace::Script::Message qw/app_message app_warning app_error/;
+use MyPlace::WWW::Utils qw/decode_title strnum/;
+
+my @BLOCKED_URLS = qw{
+	www.vxotu.com/u/20200204/19042770.jpg
+	www.vxotu.com/u/20200204/19042267.jpg
+	s2tu.com/images/2018/03/23/32412e0fffbf91b76a.md.jpg
+	sximg.com/u/20200128/22530283.jpg
+	sxotu.com/u/20200122/09444911.jpg
+	s2tu.com/images/2020/01/23/fghgn2__0464b8a2ff631999.jpg
+};
+my @BLOCKED_SITES = qw{
+	vlook.cn
+	i.imgur.com
+	wifi588.net
+	202.101.235.102
+};
+
+my $BLOCKED_EXP = '^https?:(?:\/\/www\.|\/\/)(?:' .
+	join('|',map {s/([\.\\\/])/\\$1/rg} @BLOCKED_URLS) . "|" .
+	join('|',map {s/([\.\\\/])/\\$1/rg} @BLOCKED_SITES) . 
+')'; $BLOCKED_EXP = qr/$BLOCKED_EXP/;
+my @TRANS_URLS = (
+	['http:((?:\/\/www\.|\/\/)(?:s\d+\.img26\.com|s2tu\.com|s\d+.z2x5c8\.com))','https:$1'],
+);
 
 
 sub OPTIONS {qw/
@@ -60,7 +85,6 @@ my %DOWNLOADERS = (
 
 );
 
-my $BLOCKED_URLS = qr/https?:(?:\/\/www\.|\/\/)(?:vlook\.cn)/;
 my $MAX_RETRY = 3;
 my %RETRIED;
 sub FAILED_RETRY {
@@ -68,14 +92,14 @@ sub FAILED_RETRY {
 	my $key = "@_";
 	my $retry = $RETRIED{$key} || 0;
 	if($retry > $MAX_RETRY) {
-		print STDERR "Failed too much time\n";
+		app_error "Failed too much time\n";
 		$RETRIED{$key} = 0;
 		return $self->EXIT_CODE("FAILED");
 	}
 	else {
 		$retry++;
 		$RETRIED{$key} = $retry;
-		print STDERR "Failed, retring ...\n";
+		app_warning "Failed, retring ...\n";
 		return $self->EXIT_CODE("RETRY");
 	}
 }
@@ -129,7 +153,7 @@ sub expand_url {
 					if(m/^\s*<?\s*location\s*:\s*(.+?)\s*$/i) {
 						my $next = $1;
 						next unless($next =~ m/^http/);
-						print STDERR "URL: $url \n => $next\n";
+						app_message "URL: $url \n => $next\n";
 						close FI;
 						return $next;
 						last;
@@ -143,8 +167,14 @@ sub read_m3u8_url {
 	my $self = shift;
 	my $url = shift;
 	my $f_m3u = shift;
+	my @opts = @_;
+	my $inc_mode;
+	if($url =~ m/^(.+)#inc$/) {
+		$url = $1;
+		$inc_mode = 1;
+	}
 	my $furl = $url;
-
+	
 	if(!-f $f_m3u) {
 		$furl = expand_url($url);
 	}
@@ -155,12 +185,12 @@ sub read_m3u8_url {
 	$f_base2 =~ s/\/[^\/]+$//;
 
 	if(!-f $f_m3u) {
-		$self->save_http($furl,$f_m3u);
+		$self->save_http($furl,$f_m3u,@opts);
 		#return undef,undef unless(-f $f_m3u);
 	}
 	my $FI;
 	if(!open $FI,"<:utf8",$f_m3u) {
-		print STDERR "Error opening file $f_m3u: $!\n";
+		app_error "Error opening file $f_m3u: $!\n";
 		return;
 	}
 	my @urls;
@@ -169,6 +199,8 @@ sub read_m3u8_url {
 	while(<$FI>) {
 		chomp;
 		next if(m/^#/);
+		s/^\s+//;
+		s/\s+$//;
 		if(m/^http/) {
 		}
 		elsif(m/^\/+/) {
@@ -182,27 +214,50 @@ sub read_m3u8_url {
 			my $fn = $f_m3u;
 			$fn =~ s/\.m3u8$/_$idx.m3u8/;
 			$fn =~ s/\.m3u8\?.*$/_$idx.m3u8/;
-			push @urls,$self->read_m3u8_url($_,$fn);
+			push @urls,$self->read_m3u8_url($_,$fn,@opts);
 		}
 		else {
 			push @urls,$_;
+			last if($inc_mode);
 		}
 	}
 	close $FI;
 	unlink $f_m3u;
 	return @urls;
 }
-
 sub save_m3u8 {
-	my ($self,$url,$name,$failed) = @_;
+	my ($self,$url,$name,@opts) = @_;
 	my $ext;
 	my $filename = $name;
+	my $referer;
 	if(!$filename) {
-		$filename = $url;
-		$filename =~ s/.*[\/\\]//;
-		if($filename =~ m/^(.+)\.([^\.]+)$/) {
-			$filename = $1;
-			$ext = $2;
+		if($url =~ m/youku.com\/playlist\/.*[?\&]vid=([^&]+)/) {
+			my $web = 'https://v.youku.com/v_show/id_' . $1 . "==.html";
+			$referer = $web;
+			app_message "Get title from $web ...\n";
+			if(open FI,"-|","curl","--silent","--",$web,"--referer",$web) {
+				while(<FI>) {
+					if(m/property="og:title"[^>]+content="([^"]+)/) {
+						$filename = decode_title($1,"utf-8");
+						last;
+					}
+				}
+				close FI;
+			}
+			if($filename) {
+				app_message " => " . $filename,"\n";
+			}
+			else {
+				app_message " Failed.\n";
+			}
+		}
+		else {
+			$filename = $url;
+			$filename =~ s/.*[\/\\]//;
+			if($filename =~ m/^(.+)\.([^\.]+)$/) {
+				$filename = $1;
+				$ext = $2;
+			}
 		}
 	}
 	if($filename =~ m/^(.+)\.([^\.]+)$/) {
@@ -214,55 +269,71 @@ sub save_m3u8 {
 	}
 	my $dst = "$filename.$ext";
 	if(-f $dst) {
-		print STDERR "File exists: $dst\n";
+		app_warning "File exists: $dst\n";
 		return $self->EXIT_CODE("DONE");
 	}
 	my $f_m3u = $filename . ".m3u8";
-	my @urls = $self->read_m3u8_url($url,$f_m3u);
+	my @urls = $self->read_m3u8_url($url,$f_m3u,@opts);
 	my $idx = 0;
 	my $count = @urls;
 	my @data;
 	my @files;
+	my $inc_mode;
 	if($count < 1) {
-		return $self->FAILED_RETRY(@_);
+		return $self->FAILED_RETRY($url,$filename,@opts);
 	}
-	foreach(@urls) {
+	elsif($count == 1) {
+		$inc_mode = 1;
+		$count = "*";
+	}
+	while(@urls) {
+		my $url1 = shift(@urls);
 		$idx++;
+		my $try = 0;
 		my $output = $filename . '_' .  $idx . '.' . $ext;
-		print STDERR "  [$idx/$count] ";
-		$self->save_http($_,$output);
+		app_message "  [$idx/$count] ";
+		while((!-f $output) and $try<3) {
+			$self->save_http($url1,$output,@opts);
+			last if(-f $output);
+			app_warning "Try again ...\n";
+			$try++;
+		}
 		if(-f $output) {
 			push @files,$output;
 		}
+		elsif($inc_mode) {
+			last;
+		}
 		else {
-			print STDERR "Download playlist falied\n";
-			return $self->FAILED_RETRY(@_);
-			#$failed = 0 unless(defined $failed);
-			#$failed++;
-			#if($failed <4) {
-			#	print STDERR "Failed $failed times,Retring ...\n";
-			#	return $self->save_m3u8($url,$name,$failed);
-			#}
-			#else {
-			#	print STDERR "Failed too much\n";
-			#	return $self->EXIT_CODE('FAILED');
-			#}
+			app_error "Download playlist falied\n";
+			return $self->FAILED_RETRY($url,$filename,@opts);
+		}
+		if($inc_mode and $url1 =~ m/^(.+?)(\d+)(\.[^\.]+)$/) {
+			my $prefix = $1;
+			my $num = $2;
+			my $suffix = $3;
+			my $l = length($num);
+			my $n = $num; 
+			$n =~ s/^0+//;
+			$n++;
+			#last if(scalar(@files)>100);
+			push @urls,$prefix . strnum($n,$l) . $suffix;
 		}
 	}
 	if(@files) {
 		if(!open FO,">:raw",$dst) { 
-			print STDERR "Error writting $dst : $!\n";
+			app_error "Error writting $dst : $!\n";
 			return $self->EXIT_CODE("ERROR");
 		}
 		foreach(@files) {
 			if(!open FI,"<:raw",$_) {
-				print STDERR "Error reading $_ : $!\n";
+				app_error "Error reading $_ : $!\n";
 				return $self->EXIT_CODE("ERROR");
 			}
 			print FO <FI>;
 			close FI;
 		}
-		print STDERR "Playlist saved to : $dst\n";
+		app_message "Playlist saved to : $dst\n";
 		close FO;
 		unlink @files;
 	}
@@ -310,6 +381,16 @@ sub save_http {
 	my $self = shift;
 	my $url = shift;
 	my $filename = shift;
+	if($url =~ m/:\/\/www.shoplineimg.co/) {
+		my @prog = ('wget','--progress','bar','--no-check-certificate',$url);
+		if($filename) {
+			return 1 if(-f $filename);
+			push @prog,"-O",$filename;
+		}
+		my $r = system(@prog);
+		$r = $r>>8 if(($r != 0) and $r != 2);
+		return $r;
+	}
 	my @opts = @_;
 	push @opts,'--url',$url;
 	foreach(qw/max-time connect-timeout/) {
@@ -326,6 +407,17 @@ sub save_http {
 	}
 	my $r = system('download',@opts);
 	$r = $r>>8 if(($r != 0) and $r != 2);
+#	if(-f $filename) {
+#		if($filename =~ m/^(.+)\.(?:ts|mp4|avi|mpeg|flv)$/) {
+#			my $basename = $1;
+#			my $filetype = `file --mime-type -b "$filename"`;
+#			chomp($filetype);
+#			if($filetype =~ m/text\/plain|playlist|m3u/i) {				
+#				rename $filename,"$basename.m3u8";
+#				return $self->save_m3u8($url,$filename,@_);
+#			}
+#		}
+#	}
 	return $r;
 }
 
@@ -337,6 +429,9 @@ sub file_open {
 	my $FH;
 	if(open $FH,$mode,$filename) {
 		return $FH;
+	}
+	else {
+		print STDERR "$!\n";
 	}
 	return undef;
 }
@@ -473,6 +568,7 @@ sub save_data {
 	my $filename = shift;
 	return unless($filename);
 	$data =~ s/(?:\0|\\n)/\n/g;
+	$data =~ s/(?:\\t)/    /g;
 	return $self->{LAST_EXIT} if($self->file_exists('<DATA>',$filename));
 		$self->print_msg("Write file:$filename\n");
 		my $FH = $self->file_open($filename,">:raw");
@@ -513,20 +609,45 @@ sub save_urlrule {
 	my $self = shift;
 	my $url = shift;
 	my $title = shift;
+	my $ext = "";
 	my $exit = 0;
 	if($title) {
-		print STDERR "Downloading <$title>\n";
+		
+		$self->print_msg("Downloading <$title>\n");
 		foreach($title,$title . ".ts") {
 			if(-f $_) {
-				print STDERR "$title exists\n";
+				app_message "$title exists\n";
 				return $self->EXIT_CODE("DONE");
 			}
 		}
+		$ext = "";
+		if($title =~ m/^(.+)\.([^\.]+)$/) {
+			$title = $1;
+			$ext = ".$2";
+		}
 	}
 	use MyPlace::URLRule;
-	my ($status,$info) = MyPlace::URLRule::request($url);
+	my ($status,$info) = MyPlace::URLRule::request($url,{filename=>$title,ext=>$ext});
 	if($info->{data}) {
+		my $idx = 0;
 		foreach(@{$info->{data}}) {
+			if($title and $_ !~ m/(?:    |\t)+/) {
+				my ($base,$ext2);
+				if(m/^(.+)\.([^\.]+)$/) {
+					$base = $1;
+					$ext2 = ".$2";
+				}
+				else {
+					$base = $_;
+					$ext2 = "";
+				}
+				if($idx>0) {
+					$_ = $_ . "\t" . $title . "_" . strnum($idx,2) . ($ext ? $ext : $ext2);
+				}
+				else {
+					$_ = $_ . "\t" . $title . ($ext ? $ext : $ext2);
+				}
+			}
 			my $r = $self->download($_);
 			$exit = $r if($r);
 		}
@@ -534,10 +655,19 @@ sub save_urlrule {
 			$exit = $self->EXIT_CODE("UNKNOWN");
 		}
 	}
+	elsif($info->{error}) {
+		app_error "Error: ",$info->{error},"\n";
+		if($info->{killme}) {
+			app_error "Fantal error, terminating myself...\n";
+			return $self->EXIT_CODE("KILLED");
+		}
+		return $self->EXIT_CODE("ERROR");
+	}
 	else {
 		return $self->EXIT_CODE("FAILED");
 	}
 	if($title) {
+		$title = $title . $ext;
 		foreach($title,$title . ".ts") {
 			if(-f $_) {
 				return $self->EXIT_CODE("DONE");
@@ -554,34 +684,60 @@ sub download {
 	my $line = shift;
 	my @opts = @_;
 	$_ = $line;
-	my $filename = $_;
-	my $wd;
 	my $KWD;
 	my $exit;
 	#$self->print_msg("DOWNLOAD: $line\n");
 	if(!$_) {
 		return $self->EXIT_CODE('IGNORED');
 	}
-	if(index($_,"\t")<1) {
-		my $sidx = index($_,"    ");
-		if($sidx > 1) {
-			$_ = substr($_,0,$sidx) . "\t" . substr($_,$sidx+4);
+	my ($url,$filename,$wd,@append) = split(/(?:    |\t)+/,$_);
+	if(index($_,"\t")>1) {
+		($url,$filename,$wd,@append) = split(/\t+/,$_);
+	}
+	if($filename) {
+		$filename =~ s/^\s+//;
+		$filename =~ s/\s+$//;
+		$filename =~ s/[\/\\]+$//;
+		$filename =~ s/\s+$//;
+		if(-d $filename) {
+			my $base = $filename;
+			$base =~ s/.*\///;
+			$base = $filename unless($base);
+			$filename = $filename . "/"  . $base;
 		}
 	}
-	elsif(m/^(.+?\s*\t\s*([^\t]+))\s*\t\s*([^\t]+)$/) {
-		$_ = $1;
-		$filename = $2;
-		$wd = $3;
-		$KWD = getcwd;
+	if($wd) {
+		if($wd =~ m/^-/) {
+			unshift @append,$wd;
+			$wd = undef;
+		}
+		else {
+
+		}
+		$KWD = getcwd();
 	}
-	elsif(m/^.+\s*\t\s*(.+)$/) {
-		$filename = $1;
+	elsif($filename and $filename =~ m/[\/\\]+/) {
+			my @dirs = split(/[\/\\]+/,$filename);
+			my $cur = "";
+			pop @dirs;
+			foreach(@dirs) {
+				$cur = $cur . $_;
+				if(!-d $cur) {
+					if(mkdir $cur) {
+						app_message "Create directory $cur\n";
+					}
+					else {
+						app_message "Create directory $cur FAILED\n";
+						last;
+					}
+				}
+			}
 	}
-	$filename =~ s/.*[\/\\]+//;
+	#$filename =~ s/.*[\/\\]+// if($filename);
 	if($wd) {
 		mkdir $wd unless(-d $wd);
 		if(!chdir $wd) {
-			print STDERR "Error change directory: $wd!\n";
+			app_error "Error change directory: $wd!\n";
 			return $self->EXIT_CODE("ERROR");
 		}
 		else {
@@ -597,7 +753,7 @@ sub download {
 			chomp;
 			if($_ eq $filename) {
 				close FI;
-				print STDERR "Ignored: \"$filename\" in FILES.LST\n"; 
+				app_message "Ignored: \"$filename\" in FILES.LST\n"; 
 				return $self->EXIT_CODE("IGNORED");
 			}
 		}
@@ -608,9 +764,13 @@ sub download {
 		system("touch","--",$filename);
 		$exit = $self->EXIT_CODE("DEBUG");
 	}
-	elsif($self->{OPTS}->{markdone}) {
+	elsif($filename and $self->{OPTS}->{markdone}) {
 		if(-f $filename) {
 			$self->print_msg("[Mark done] $filename\n");
+			$exit = $self->EXIT_CODE("DONE");
+		}
+		elsif($self->{OPTS}->{force}) {
+			$self->print_msg("[FORCE Mark done] $filename\n");
 			$exit = $self->EXIT_CODE("DONE");
 		}
 		else {
@@ -628,102 +788,74 @@ sub download {
 			push @args,$3 if($3);
 			push @args,$4 if($4);
 			my $package = $DOWNLOADERS{$dld}->{PACKAGE} || ('MyPlace::Downloader::' . ($DOWNLOADERS{$dld}->{NAME} || $dld));
-#			print STDERR "Downloader> import downloader [$dld <$package>]\n";
+#			app_message "Downloader> import downloader [$dld <$package>]\n";
 			eval "require $package;";
-			print STDERR "$@\n" if($@);
+			app_message "$@\n" if($@);
 			my $dl = bless {OPTS=>$self->{OPTS}},$package;
 			$exit = $dl->download($_,@args);
 			last;
 		}
 	}
-
+	
+	$_ = $url;
+	foreach my $t (@TRANS_URLS) {
+		eval("\$_ =~ s/$t->[0]/$t->[1]/g;");
+	}
 	if(defined $exit) {
 	}
 	elsif(!$_) {
 		$exit = 1;
 	}
-	elsif($_ =~ $BLOCKED_URLS) {
-		print STDERR "Error url blocked: $_\n";
+	elsif($_ =~ $BLOCKED_EXP) {
+		app_warning "\nIgnored, url blocked: $_\n";
 		$exit = $self->EXIT_CODE("ERROR");
 	}
-	elsif(m/^urlrule:(.+)\t+(.*)$/) {
-		$exit = $self->save_urlrule($1,$2);
-	}
 	elsif(m/^urlrule:(.+)$/) {
-		$exit = $self->save_urlrule($1);
+		$exit = $self->save_urlrule($1,$filename,@append);
 	}
 	elsif(m/^post:\/\/(.+)$/) {
-		$exit = $self->save_http_post($1);
-	}
-	elsif(m/^qvod:(.+)\t(.+)$/) {
-		$exit = $self->save_qvod($1,$2);
+		$exit = $self->save_http_post($1,$filename,@append);
 	}
 	elsif(m/^qvod:(.+)$/) {
-		$exit = $self->save_qvod($1);
-	}
-	elsif(m/^bdhd:(.+)\t(.+)$/) {
-		$exit = $self->save_bdhd($1,$2);
+		$exit = $self->save_qvod($1,$filename,@append);
 	}
 	elsif(m/^bdhd:(.+)$/) {
-		$exit = $self->save_bdhd($1);
-	}
-	elsif(m/^(ed2k:\/\/.+)\t(.+)$/) {
-		$exit = $self->save_bhdh($1,$2);
+		$exit = $self->save_bdhd($1,$filename,@append);
 	}
 	elsif(m/^(ed2k:\/\/.+)$/) {
-		$exit = $self->save_bhdh($1);
-	}
-	elsif(m/^(http:\/\/[^\/]*(?:weipai\.cn|oldvideo\.qiniudn\.com)\/.*)\t(.+)$/) {
-		$exit = $self->save_weipai($1,$2);
+		$exit = $self->save_bhdh($1,$filename,@append);
 	}
 	elsif(m/^http:\/\/[^\/]*(?:weipai\.cn|oldvideo\.qiniudn\.com)\/.*/) {
-		$exit = $self->save_weipai($_);
+		$exit = $self->save_weipai($_,$filename,@append);
 	}
 	#https://pl.dfdkmj.com//20181102/bpz5ojNu/1435kb/hls/index.m3u8
-	elsif(m/^(https?:\/\/.*m3u8\?[^\t]+)\t(.+)$/) {
-		$exit = $self->save_m3u8($1,$2);
+	elsif(m/youku\.com\/playlist\//) {
+		$exit = $self->save_m3u8($_,$filename,@append);
 	}
-	elsif(m/^https?:\/\/.*m3u8\?.*/) {
-		$exit = $self->save_m3u8($_);
+	elsif(m/^m3u8:(.+)/) {
+		$exit = $self->save_m3u8($1,$filename,@append);
 	}
-	elsif(m/^(https?:\/\/.*m3u8)\t(.+)$/) {
-		$exit = $self->save_m3u8($1,$2);
-	}
-	elsif(m/^https?:\/\/.*m3u8$/) {
-		$exit = $self->save_m3u8($_);
-	}
-	elsif(m/\.m3u8$/) {
-		$exit = $self->save_m3u8($_);
-	}
-	elsif(m/^(https?:\/\/.+)\t(.+)$/) {
-		$exit = $self->save_http($1,$2);
+	elsif(m/\.m3u8$|\.m3u8\t/) {
+		$exit = $self->save_m3u8($url,$filename,@append);
 	}
 	elsif(m/^(https?:\/\/.+)$/) {
-		$exit = $self->save_http($1);
-	}
-	elsif(m/^:?(\/\/.+)\t(.+)$/) {
-		$exit = $self->save_http("http:$1",$2);
+		$exit = $self->save_http($1,$filename,@append);
 	}
 	elsif(m/^:?(\/\/.+)$/) {
-		$exit = $self->save_http("http:$1");
-	}
-	elsif(m/^file:\/\/(.+)\t(.+)$/) {
-		$exit = $self->save_file($1,$2);
+		$exit = $self->save_http("http:$1",$filename,@append);
 	}
 	elsif(m/^file:\/\/(.+)$/) {
-		$exit = $self->save_file($1,"./");
+		$exit = $self->save_file($1,$filename,@append);
 	}
-	elsif(m/^data:\/\/(.+)\t(.+)$/) {
-		$exit = $self->save_data($1,$2);
+	elsif(m/^data:\/\/(.+)$/) {
+		$exit = $self->save_data($1,$filename,@append);
 	}
 	elsif(m/$EXPS{torrent}/) {
-		$exit = $self->save_torrent($1,$2);
-	}
-	elsif(m/$EXPS{magnet}\t(.+)$/) {
-		$exit = $self->save_torrent($1,$2);
+		$exit = $self->save_torrent($1,$filename,@append);
 	}
 	elsif(m/$EXPS{magnet}/) {
-		$exit = $self->save_torrent($1);
+		##$exit = $self->save_torrent($1,$filename,@append);
+		$exit = $self->EXIT_CODE("IGNORED");
 	}
 	else {
 		$self->print_err("Error: URL not supported [$_]\n");
@@ -758,6 +890,24 @@ sub MAIN {
 	}
 	$MAX_RETRY = $self->{OPTS}->{"max-retry"} if(defined $self->{OPTS}->{"max-retry"});
 	my $exit;
+	foreach my $bfile(qw{blacklist.lst ../blacklist.lst}) {
+		next unless(-f $bfile);
+		my @text;
+		open FI,"<".$bfile or next;
+		while(<FI>) {
+			chomp;
+			s/^\s+//;
+			s/\s+$//;
+			next unless($_);
+			push @text,$_;
+		}
+		close FI;
+		my $exp = join("|",@text);
+		if($exp) {
+			app_message "Read blacklist from $bfile: " . scalar(@text) . " rules.\n";
+			$BLOCKED_EXP .= "|" . $exp;
+		}
+	}
 	foreach my $url (@lines) {
 		if($url =~ m/^#([^:]+?)\s*:\s*(.*)$/) {
 			$self->{source}->{$1} = $2;
@@ -769,6 +919,9 @@ sub MAIN {
 		}
 		else {
 			$exit = $self->EXIT_CODE("UNKNOWN");
+		}
+		if($exit eq $self->EXIT_CODE("KILLED")) {
+			last;
 		}
 	}
 	return $exit;

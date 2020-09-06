@@ -55,6 +55,9 @@ sub download {
 		markdone
 		no-download
 	/;
+	if(@_ and (!defined $_[0]) and $_[1] eq 'EXIT') {
+		exit $_[2];
+	}
 	my @args = ();
 	foreach(@opts) {
 		if($self->{OPTS}->{$_}) {
@@ -66,7 +69,22 @@ sub download {
 			push @args,'--' . $_,$self->{OPTS}->{$_};
 		}
 	}
-	my $r = system('downloader',@args,'--',@_);
+	my @o;
+	foreach my $a (@_) {
+		my $match;
+		foreach(@opts) {
+			if($a eq '--' . $_) {
+				$match = 1;
+			}
+		}
+		if($match) {
+			push @args,$a;
+		}
+		else {
+			push @o,$a;
+		}
+	}
+	my $r = system('downloader',@args,'--',@o);
 	$r = $r>>8 if(($r != 0) and $r != 2);
 	return $r;
 }
@@ -165,7 +183,7 @@ sub MAIN {
 	my $maxtry = $OPTS->{maxretry} || 1;
 	my $trying = 1;
 	while($trying<=$maxtry) {
-		@exits = $mtm->run(@_);
+		@exits = $mtm->execute(@_);
 		if($exits[0]) {
 			return @exits;
 		}

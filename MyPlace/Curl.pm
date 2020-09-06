@@ -181,6 +181,16 @@ sub _build_cmd
     return @cmds;
 }
 
+sub execute {
+    my $self = shift;
+    my @args;
+    foreach($self->_build_cmd,@_) {
+        next unless($_);
+        push @args,$_;
+    }
+    system(@CURL,@args);
+}
+
 sub _run_curl 
 {
     my $self = shift;

@@ -218,6 +218,21 @@ sub run {
 	return @x;
 }
 
+sub execute {
+	my $self = shift;
+	my @x = $self->run(@_);
+	#my %opt = %{$self->{options}};
+	#if($opt{worker}) {
+	#	my $worker = $opt{worker};
+	#	if(ref $worker) {
+	#		&$worker(undef,"EXIT",1);
+	#	}
+	#}
+	return @x;
+}
+
+
+my $IAMKILLED = undef;
 sub _run {
 	my $self = shift;
 	delete $self->{exited};
@@ -269,7 +284,7 @@ sub _run {
 		}
 	}
 
-	if($opt{recursive}) {
+	if($opt{recursive} and (!-f ".data")) {
 		my $kd = $opt{directory};
 		my $kt = $opt{title};
 		my $km = $MSG_PROMPT;
@@ -291,6 +306,7 @@ sub _run {
 			$self->{options}->{directory} = $kd;
 			$self->{options}->{title} = $kt;
 			$MSG_PROMPT = $km;
+			last if($IAMKILLED);
 		}
 	}
 	my $config_dir = $CONFIG_DIR;
@@ -306,6 +322,11 @@ sub _run {
 	$COUNTALL = scalar(@input);
 	if($opt{simple}) {
 		push @queue,@input;
+	}
+	elsif(-d $config_dir and -f "$config_dir/stop.txt") {
+		print STDERR "Directory mark STOP:";
+		system("cat","$config_dir/stop.txt");
+		return $self->exit($CWD_KEPT,$COUNTER);
 	}
 	elsif(-d $config_dir) {
 		@done = $self->_read_lines($DB_DONE,$config_dir) unless($opt{'no-done'});
@@ -414,7 +435,6 @@ sub _run {
 	push @wopts,"--referer",$opt{referer} if($opt{referer});
 	push @wopts,"--referer",$self->{source}->{referer} if($self->{source}->{referer});
 
-	my $IAMKILLED = undef;
 	
 	my $SUBEXIT = sub {
 		if(!$opt{simple}) {
@@ -501,6 +521,7 @@ sub _run {
 		}
 		elsif(ref $worker) {
 			$r = &$worker($task,@wopts);
+			#$IAMKILLED  = 1 if($r eq $self->EXIT_CODE('KILLED'));
 		}
 		else {
 			$r = system($worker,$task,@wopts);

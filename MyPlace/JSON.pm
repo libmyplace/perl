@@ -7,7 +7,7 @@ BEGIN {
     our ($VERSION,@ISA,@EXPORT,@EXPORT_OK,%EXPORT_TAGS);
     $VERSION        = 1.00;
     @ISA            = qw(Exporter);
-    @EXPORT         = qw(decode_json);
+    @EXPORT         = qw(decode_json encode_json);
     @EXPORT_OK      = qw();
 }
 use JSON qw//;
@@ -19,10 +19,14 @@ sub decode_json {
 		return undef;
 	}
 	else {
-		if($json->{reason}) {
+		if((ref $json) eq "HASH" and $json->{reason}) {
 			print STDERR "Error: " . $json->{reason},"\n";
 		}
 		return $json;
 	}
+}
+
+sub encode_json {
+	return JSON::encode_json($_[0]);
 }
 1;

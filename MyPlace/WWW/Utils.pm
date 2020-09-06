@@ -8,6 +8,7 @@ BEGIN {
     $VERSION        = 1.00;
     @ISA            = qw(Exporter);
     @EXPORT         = qw(
+		&post_url
 		&get_url
 		&get_url_wait
 		&url_getinfo
@@ -17,6 +18,7 @@ BEGIN {
 		&url_getfull
 		&get_safename
 		&extract_meta
+		&get_curl
 	);
     @EXPORT_OK      = qw(
 		&new_file_data
@@ -36,19 +38,24 @@ BEGIN {
 		&from_to
 		&create_torrent_title
 		&extract_meta
+		&create_title_utf8
+		&create_title_from_utf8
+		&decode_title
+		&get_curl
 	);
 }
 use Encode qw/from_to decode encode/;
 use MyPlace::Curl;
 
+our $MAX_TITLE_LENGTH = 100;
 my $cookie = $ENV{HOME} . "/.curl_cookies.dat";
-#my $cookiejar = $ENV{HOME} . "/.curl_cookies2.dat";
+my $cookiejar = $ENV{HOME} . "/.curl_cookies.dat";
 my $curl = MyPlace::Curl->new(
 	"location"=>'',
 	"silent"=>'',
 	"show-error"=>'',
 	"cookie"=>$cookie,
-	#	"cookie-jar"=>$cookiejar,
+	"cookie-jar"=>$cookiejar,
 #	"retry"=>4,
 	"max-time"=>120,
 );
@@ -76,12 +83,14 @@ $r = $r . "\n<title>$title</title>" if($title);
 $r = $r . "\n<base href=\"$base\"> " if($base);
 $r = $r . "\n</head>\n<body>\n" . $html . "\n</body>\n</html>";
 $r =~ s/\n/\0/sg;
+$r =~ s/(?:    |\t)/\\t/sg;
 	return "data://$r\t$title.html";
 }
 
 sub new_file_data {
 	my $file = shift;
-	my $t = join("",@_);
+	my $t = join("\n",@_);
+	$t =~ s/(?:    |\t)/\\t/g;
 	$t =~ s/\n/\\n/sg;
 	return "data://$t\t$file";
 }
@@ -190,6 +199,10 @@ sub get_url_wait
 	return get_url($url,@_);
 }
 
+sub get_curl {
+	return $curl;
+}
+
 sub get_url {
 	my $url = shift;
 	my $verbose = shift(@_) || '-q';
@@ -235,6 +248,12 @@ sub get_url {
 	else {
 		return $data;
 	}
+}
+
+sub post_url {
+	my $url = shift;
+	my $data = shift;
+	return get_url($url,"-v","-d",$data,@_);
 }
 sub decode_html {
 	my $html = shift;
@@ -358,6 +377,7 @@ sub unescape_text {
         "&copy;","\x{00a9}",
         "&reg;","\x{00ae}",
         "&euro;","\x{20a0}",
+		"&hellip;","",
     );
     my $text = shift;
     return unless($text);
@@ -375,6 +395,31 @@ sub unescape_text {
 	$text =~ s/\s+$//g;
     return $text;
 }
+
+sub create_title_utf8 {
+	my $a = shift;
+	$a =~ s/(?:プレイエロ動画|【pornhub動画】|ストリーミングポルノ)//g;
+	$a = decode("utf-8",$a);
+	return encode("utf-8",create_title($a,@_));
+}
+
+sub decode_title {
+	my $t = shift;
+	my $c = shift;
+	eval {$t = decode($c,$t);};
+	if($t) {
+		return encode("utf-8",create_title($t));
+	}
+	else {
+		return undef;
+	}
+}
+
+sub create_title_from_utf8 {
+	return encode("utf-8",create_title(@_));
+}
+
+
 sub create_title {
 	my $title = shift;
 	my $ext = shift;
@@ -398,8 +443,8 @@ sub create_title {
 	$title =~ s/^\[?www\.\w+\.\w+\]?//;
 	$title =~ s/\s+/_/g;
 	$title =~ s/\s*\[email&#160;protected\]\s*//g;
-	if(length($title)>240) {
-		$title = substr($title,0,240);
+	if(length($title)>$MAX_TITLE_LENGTH) {
+		$title = substr($title,0,$MAX_TITLE_LENGTH);
 	}
 	$title =~ s/^[-_\s]+//;
 	$title =~ s/[-_\s]+$//;
@@ -491,6 +536,16 @@ sub html2text {
 	my @r;
 	foreach(@text) {
 		next unless($_);
+		while(m/^(.*?)<img.+?src="([^"]+).*?\/\s*>(.*)$/i) {
+			$_ = "$1$3\\n$2\\n";
+		}
+		while(m/^(.*?)<img.+?src="([^"]+)".*?>(.+?)<\/\s*img.*?>(.*)$/i) {
+			$_ = "$1$3\\n$2\\n$4";
+		}
+		while(m/^(.*?)<a.+?href="([^"]+)".*?>(.+?)<\/\s*a\s*>(.*)$/i) {
+			$_ = "$1$3\\n$2\\n$4";
+		}
+		s/\\n\\n/\\n/g;
 		s/&nbsp;/ /g;
 		s/[\r\n]+$//;
 		s/<\/?(?:br|div|td)\s*\/?>/###NEWLINE###/gi;
@@ -501,7 +556,7 @@ sub html2text {
 		s/\s+$//;
 		s/([\r\n]){2,}/$1/g;
 		next unless($_);
-		$_ = unescape_text($_);
+		#$_ = unescape_text($_);
 		push @r,$_;
 	}
 	if(wantarray) {

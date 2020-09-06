@@ -12,6 +12,7 @@ BEGIN {
 }
 use Getopt::Long qw/GetOptionsFromArray/;
 Getopt::Long::Configure ("bundling", "no_ignore_case");
+use Term::ANSIColor;
 
 our %EXIT_CODE = (
 	OK=>0,
@@ -33,6 +34,15 @@ sub EXIT_CODE {
 		$code = shift;
 	}
 	return $code ? defined $EXIT_CODE{$code} ? $EXIT_CODE{$code} : $code : $EXIT_CODE{UNKNOWN};
+}
+
+sub exit_code {
+	my $self = shift;
+	my $code = EXIT_CODE(@_);
+	if($code eq $EXIT_CODE{KILLED}) {
+		die();
+	}
+	return $code;
 }
 
 sub EXIT_NAME {
@@ -161,19 +171,19 @@ sub init_print {
 sub print_msg {
 	my $self = shift;
 	my $MSG_PROMPT = $self->{MSG_PROMPT} || '';
-	print STDERR "$MSG_PROMPT> ",@_;
+	print STDERR "$MSG_PROMPT> ",color("green"),@_,color("RESET");
 }
 
 sub print_err {
 	my $self = shift;
 	my $MSG_PROMPT = $self->{MSG_PROMPT} || '';
-	print STDERR "$MSG_PROMPT> ",@_;
+	print STDERR "$MSG_PROMPT> ",color("red"),@_,color("RESET");
 }
 
 sub print_warn {
 	my $self = shift;
 	my $MSG_PROMPT = $self->{MSG_PROMPT} || '';
-	print STDERR "$MSG_PROMPT> ",@_;
+	print STDERR "$MSG_PROMPT> ",color("yellow"),@_,color('RESET');
 }
 
 1;
