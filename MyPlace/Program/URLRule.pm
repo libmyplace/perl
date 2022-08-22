@@ -386,7 +386,7 @@ sub CMD_DOWNLOAD {
 	$self->CMD_ACTION('DATABASE',@target);
 	use MyPlace::Program::Downloader;
 	my $DL = new MyPlace::Program::Downloader;
-	my @DLOPT = qw/--quiet --input urls.lst --recursive/;
+	my @DLOPT = qw/--quiet --recursive/;
 	push @DLOPT,"--retry" if($OPTS{retry});
 
 	foreach my $item (@target) {
@@ -1014,7 +1014,7 @@ sub MAIN {
 	if($DEF{$CMD}) {
 		return $self->CMD_EXEC($CMD,$DEF{$CMD},@target);
 	}
-	elsif($CMD eq 'LIST') {
+	elsif($CMD eq 'LIST' or $CMD eq 'QUERY') {
 		return $self->CMD_LIST(@target);
 	}
 	elsif($CMD eq 'CAT') {

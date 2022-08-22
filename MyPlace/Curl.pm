@@ -21,7 +21,8 @@ my @CURLOPT = (
             'progress-bar'	=>'',
             'create-dirs'	=>'',
             'connect-timeout'=>15,
-			'user-agent'=>'Mozilla/5.0 (X11; U; Linux i686; en-US; rv:1.9.0.3) Gecko/2008092416 Firefox/3.0.3 Firefox/3.0.1',
+			'user-agent'=>'Mozilla/5.0 (Windows NT 6.1; Win64; x64; rv:99.0) Gecko/20100101 Firefox/99.0',
+			#Mozilla/5.0 (X11; U; Linux i686; en-US; rv:1.9.0.3) Gecko/2008092416 Firefox/3.0.3 Firefox/3.0.1',
 );
 my $PROXY = '127.0.0.1:9050';
 my $BLOCKED_HOST = 'wretch\.cc|facebook\.com|fbcdn\.net';

@@ -48,7 +48,9 @@ sub icmd_execute {
 		}
 		$cmds[$idx] = $data->{data};
 	}
-	print STDERR " :" . join(" ",@cmds),"\n";
+	if($data->{"system.echo"}) {
+		print STDERR " :" . join(" ",@cmds),"\n";
+	}
 	system(@cmds);
 #	exec(@cmds);
 }
@@ -82,6 +84,7 @@ sub icmd_parse {
 		pos=>-1,
 		cmd=>$cmd,
 		args=>@words ? [@words] : undef,
+		"system.echo"=>1,
 	};
 
 	my $UCMD = uc($cmd);
@@ -127,7 +130,7 @@ sub icmd_start {
 package MyPlace::ICmd::Control;
 use strict;
 use warnings;
-use Term::ANSIColor qw/color/;
+use Term::ANSIColor;
 use Cwd qw/getcwd/;
 use MyPlace::String::Utils qw/strtime/;
 my $DATAPREFIX = '';
@@ -201,16 +204,18 @@ sub internal_process {
 	}
 	elsif($UCMD eq 'LOAD') {
 		$PROCESSER = join(" ",@_);
-		my $cwd = getcwd;
 		$PROCESSER_NAME = $PROCESSER;
 		$PROCESSER_NAME =~ s/.*[\\\/]//;
-		$PROCESSER = $cwd . "/" . $PROCESSER;
+		if($PROCESSER =~ m/^.[\/\\]([^\\\/]+)$/) {
+			my $cwd = getcwd;
+			$PROCESSER = $cwd . "/" . $PROCESSER_NAME;
+		}
 		message "Using processer $PROCESSER_NAME\n";
 		if(-f $PROCESSER) {
 			if($FHLOG) {
 				close $FHLOG;
 			}
-			open $FHLOG,'>>',$PROCESSER . ".log";
+			open $FHLOG,'>>',$PROCESSER_NAME . ".log";
 		}
 		return 1;
 	}
@@ -249,11 +254,12 @@ sub internal_process {
 }
 
 sub process {
-#	message "[PROCESS] " . join(" ",@_),"\n";
+	#message "[PROCESS] " . join(" ",@_),"\n";
 	if($FHLOG) {
 		print $FHLOG strtime, ": ",join(" ",@_),"\n";
 	}
 	local $_ = shift;
+	s/(&|\||>|<)/\\$1/g;
 	my ($cmd,@words) = split(/ /,$_);
 	my $UCMD = uc($cmd);
 	

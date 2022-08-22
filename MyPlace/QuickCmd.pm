@@ -72,6 +72,7 @@ my %vtable = (
 	'SYSTEM'=>'SYSTEM',
 	'PRE'=>'PREFIX',
 	'PREFIX'=>'PREFIX',
+	'P'=>'PREFIX',
 );
 
 my %ctable = (

@@ -19,6 +19,7 @@ our %EXIT_CODE = (
 	DONE=>0,
 	ERROR=>1,
 	KILLED=>2,
+	PASS=>3,
 	FAILED=>11,
 	IGNORED=>12,
 	UNKNOWN=>19,

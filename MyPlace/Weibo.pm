@@ -8,7 +8,7 @@ BEGIN {
     $VERSION        = 1.00;
     @ISA            = qw(Exporter);
     @EXPORT         = qw();
-    @EXPORT_OK      = qw(m_get_weibo m_get_user m_get_page m_get_data m_get_mblog m_check_page m_get_all_page extract_post_title m_get_object);
+    @EXPORT_OK      = qw(m_get_weibo m_get_user m_get_page m_get_data m_get_mblog m_check_page m_get_all_page extract_post_title m_get_object m_get_info);
 }
 1;
 use MyPlace::JSON;
@@ -17,6 +17,35 @@ use MyPlace::WWW::Utils qw/get_url get_url_wait create_title expand_url html2tex
 use utf8;
 
 #m.weibo.cn/api/container/...
+
+sub get_json_url {
+	my $url = shift;
+	my $wait = shift;
+	my $html = get_url_wait($wait,$url);
+	my $json = MyPlace::JSON::decode_json($html);
+	#use Data::Dumper;print Dumper($json),"\n";
+	#die();
+	if(!$json) {
+		return 0,"Error parsing content";
+	}
+	if($json->{errno}) {
+		my %r =  (error=>"Error $json->{errno}" . ($json->{msg} ? ": $json->{msg}" : ""));
+		print STDERR $r{error},"\n";
+		return 0,$json->{msg},$json->{errno};
+	}
+	if((defined $json->{ok}) && ($json->{ok} == 0)) {
+		return 0,"No this page";
+	}
+	if((defined $json->{code})) {
+		if($json->{code} == 100000) {
+			return 1,$json;
+		}
+		else {
+			return 0,$json->{msg},$json->{code};
+		}
+	}
+	return 1,$json;	
+}
 
 sub m_get_weibo {
 	my $oid = shift;
@@ -35,7 +64,7 @@ sub m_get_weibo {
 		print STDERR $r{error},"\n";
 		return 0,$json->{msg},$json->{errno};
 	}
-	if((defined $json->{ok}) && $json->{ok} == 0) {
+	if((defined $json->{ok}) && ($json->{ok} == 0)) {
 		return 0,"No this page";
 	}
 	if(!m_check_page($url,$json)) {
@@ -80,7 +109,7 @@ sub m_extract_blogs {
 					$mblog = {%$mblog,%{$pic->{mblog}}};
 					delete $mblog->{mblog};
 				}
-				$mblog->{original_pic} = $mblog->{pic_big};
+				$mblog->{original_pic} = ($mblog->{pic_big} || $mblog->{pic_ori});
 				push @mblogs,$mblog;
 			}
 		}
@@ -91,22 +120,24 @@ sub extract_post_title {
 	my $text = shift;
 	my $decode = shift;
 	my $utf8 = find_encoding('utf-8');
+	my $limits = 80;
 	$text = $utf8->decode($text) if($decode);
+	$text =~ s/https?:\/\/[^\s]+//;
 	$text =~ s/\s+//g;
-	if($text =~ m/\\n/ or length(${text})>40) {
+	if($text =~ m/\\n/ or length(${text})>$limits) {
 		$text =~ s/\\n/\n/g;
 		my @lines = split(/\s*[\n\r'";。…！\!.；‘‘’？\?]+\s*/,${text});
 		foreach(@lines) {
 			next unless($_);
-			if(length($_)>40) {
+			if(length($_)>$limits) {
 				my @p = split(/\s*[，－,、'~_-]+\s*/,$_);
 				$_ = shift(@p);
 				foreach my $p(@p) {
 					$p = $_ . "_" . $p;
-					last if(length($p)>40);
+					last if(length($p)>$limits);
 					$_ = $p;
 				}
-				$_ = substr($_,0,40) if(length($_)>40);
+				$_ = substr($_,0,$limits) if(length($_)>$limits)
 			}
 			$text = create_title($utf8->encode($_));
 			last;
@@ -146,6 +177,7 @@ sub m_get_mblog {
 sub m_extract_mblog {
 	my $mblog = shift;
 	my $no_video = shift;
+	my $photoall = shift;
 	my @data;
 	my %dup;
 	my @srcs;
@@ -153,15 +185,53 @@ sub m_extract_mblog {
 	my $id =  undef;
 	my $created = undef;
 	my $text = undef;
+	my $utf8 = find_encoding('utf-8');
+	if($photoall) {
+		my $filename;
+		if($mblog->{id} and $mblog->{pic_id}) {
+			$filename = $mblog->{id} . "_" . $mblog->{pic_id};
+		}
+		elsif($mblog->{id}) {
+			$filename=  $mblog->{id};
+		}
+		elsif($mblog->{pic_id}) {
+			$filename = $mblog->{pic_id};
+		}
+		if($mblog->{text}) {
+			$text = extract_post_title($mblog->{text});
+			$filename = $filename ? $filename . "_" . $text : $text;
+		}
+		my $url;
+		foreach(qw/original_pic pic_ori pic_big pic_mw2000/) {
+			if($mblog->{$_}) {
+				$url = $mblog->{$_};
+				last;
+			}
+		}
+		if($url) {
+			if(!$filename) {
+				return $url,$url;
+			}
+			elsif($url =~ m/\.([^\.]+)$/) {
+				return $filename,$url . "\t" . $filename . ".$1";
+			}
+			else {
+				return $filename,$url;
+			}
+		}
+		return undef;
+	}
 	if(${mblog}->{retweeted_status}) {
-		return m_extract_mblog($mblog->{retweeted_status},$no_video);
+		return m_extract_mblog($mblog->{retweeted_status},$no_video,$photoall);
 	}
 	$id = $mblog->{id};
 	use MyPlace::String::Utils qw/strtime2/;
 	$created = strtime2($mblog->{created_at},5);
 	if(!$id) {
 		$id = $mblog->{scheme};
-		$id =~ s/^.*mblogid=([^&"]+).*$/$1/;
+		if($id) {
+			$id =~ s/^.*mblogid=([^&"]+).*$/$1/;
+		}
 	}
 	my $orig = $mblog->{original_pic};
 	my $mext = ".jpg";
@@ -169,37 +239,84 @@ sub m_extract_mblog {
 		if($orig =~ m/\.([^\.]+)$/) {
 			$mext = ".$1";
 		}
+		push @srcs,$orig;
 	}
 	my $bpics = $mblog->{pic_ids};
-	if($bpics and @{$bpics}) {
+	my $rt = ref $bpics;
+	if($bpics and ($rt eq "ARRAY")) {
 		foreach my $bpid (@{$bpics}) {
 			push @srcs,'https://ww1.sinaimg.cn/large/' . $bpid . $mext;
 		}
 	}
 	$bpics = $mblog->{pics};
-	if($bpics and @{$bpics}) {
+	$rt = ref $bpics;
+	if($bpics and ($rt eq 'ARRAY')) {
 		foreach my $bpic(@{$bpics}) {
 			next unless($bpic->{large});
 			next unless($bpic->{large}->{url});
 			push @srcs,$bpic->{large}->{url};
 		}
 	}
-	push @srcs,$orig if($orig);
-	$id = $id ? "$id\_" : "";
-	$id = $created . "_" . $id if($created);
+	$id = $id || "";
+	my $id_text = $id ? $id . "_" : "";
+	$id_text = $created . "_" . $id_text if($created);
 	if($mblog->{text}) {
 		$mblog->{text} = html2text($mblog->{text});
 		$text = extract_post_title($mblog->{text});
-		$id = $id . $text if($text);
 	}
 	if($mblog->{page_info}) {
 		my $page = $mblog->{page_info};
+		foreach(qw/content2 content1 page_title title/) {
+			if($page->{$_}) {
+				$text = extract_post_title($page->{$_});
+				last if($text);
+			}
+		}
+		my $filename = $text ? ($id_text . $text) : $id_text;
 		if((!$no_video)) {
 			if($page->{type} eq 'video') {
-				if($page->{media_info}) {
-					foreach(qw/h265_mp4_hd h265_mp4_ld mp4_hd_url mp4_sd_url stream_url_hd stream_url/) {
-						next unless($page->{media_info}->{$_});
-						push @data,$page->{media_info}->{$_} . "\t$id.mp4";
+				my $video_ok = undef;
+				my %a = %{$page->{media_info}} if($page->{media_info});
+				%a = (%{$page->{urls}},%a) if($page->{urls});
+				foreach("_1080p","_720p","_hd","","_ld") {
+					foreach my $pret(qw/h265 h265_mp4 mp4 stream dash/) {
+						foreach my $suft("","_mp4","_url") {
+							my $vt = $pret . $_ . $suft;
+							#print STDERR $vt,"\n";
+							next unless($a{$vt});
+							push @data,$a{$vt} . "\t$filename.mp4";
+							$video_ok = 1;
+						}
+					}
+				}
+				if((!$video_ok) and $page->{object_id}) {
+
+					my $dash_url = 'https://weibo.com/aj/video/getdashinfo?ajwvr=6&media_ids='
+						. $page->{object_id} . '&__rnd=' . scalar(time) 
+						. '&display=0&retcode=6102';
+
+					my ($dash_ok,$dash) = get_json_url($dash_url);
+					if($dash_ok) {
+						print STDERR "\tJSON ok\n";
+						my $dash_data = $dash->{data};	
+						my $rt = ref $dash_data;
+						if($rt and ($rt eq 'HASH') and $dash_data->{list} && $dash_data->{list}->[0]) {
+							my $dash_list = $dash_data->{list}->[0]->{details};
+							foreach my $dash_item(@$dash_list) {
+								next unless($dash_item->{play_info});
+								if($dash_item->{play_info}->{mime} and $dash_item->{play_info}->{mime} =~ /audio/) {
+								next;
+								}
+								push @data,$dash_item->{play_info}->{url} . "\t$filename.mp4" ;
+								$video_ok = 1;
+							}
+						}
+						else {
+							print STDERR "\t[getdashinfo return empty\n";
+						}
+					}
+					else {
+						print STDERR "\tJSON error\n";
 					}
 				}
 			}
@@ -211,7 +328,7 @@ sub m_extract_mblog {
 							push @srcs,$_;
 						}
 						else {
-							push @data,$_ . "\t$id.mp4";
+							push @data,$_ . "\t$filename.mp4";
 						}
 					}
 				}
@@ -249,7 +366,7 @@ sub m_extract_mblog {
 			if($ndx>1) {
 				$ext = "_$suf$ext";
 			}
-			my $name = $id ? $id . $ext : $img;
+			my $name = $text ? ($id_text . $text . $ext) : ($id_text . $img);
 			push @data,"$_\t$name";
 		}
 		else{
@@ -257,7 +374,7 @@ sub m_extract_mblog {
 		}
 		$dup{$_} = 1;
 	}
-	return $id,@data;
+	return ($text ? $id_text . $text : $id_text),@data;
 }
 
 sub m_get_data {
@@ -273,8 +390,12 @@ sub m_get_data {
 		print STDERR $r{error},"\n";
 		return %r;
 	}
-	if((defined $json->{ok}) && $json->{ok} == 0) {
+	#use Data::Dumper;die(Data::Dumper::Dumper([$json]));
+	if((defined $json->{ok}) and ($json->{ok} == 0)) {
 		return (error=>"No this page");
+	}
+	if($url =~ m/_-_(?:photoall|photolike)/) {
+		$json->{photoall} = 1;
 	}
     my @data;
 	my ($info,@mblogs) = m_extract_blogs($json);
@@ -284,8 +405,8 @@ sub m_get_data {
 			unshift @mblogs,$mblog->{retweeted_status};
 			delete $mblog->{retweeted_status};
 		}
-		my($id,@downloads) = m_extract_mblog($mblog,1);
-		next unless($id);
+		my($id,@downloads) = m_extract_mblog($mblog,1,$json->{photoall});
+		next unless(defined $id);
 		if($mblog->{page_info}) {
 			my $page = $mblog->{page_info};
 			if(($page->{type} eq 'video') || ($page->{type} eq 'story') || ($page->{type} eq 'webpage')) {
@@ -325,7 +446,7 @@ sub m_get_object {
 		print STDERR $r{error},"\n";
 		return %r;
 	}
-	if((defined $json->{ok}) && $json->{ok} == 0) {
+	if((defined $json->{ok}) && ($json->{ok} == 0)) {
 		return (error=>"No this page");
 	}
 	return (error=>"No data found") if(!$json->{data});
@@ -375,7 +496,7 @@ sub m_check_page {
 	return 0 unless($json);
 
 	my $info = {};
-	if((defined $json->{ok}) && $json->{ok} == 0) {
+	if((defined $json->{ok}) && ($json->{ok} == 0)) {
 		print STDERR "NO [data] for " . $url . "\n";
 		return 0;
 	}
@@ -410,6 +531,7 @@ sub m_get_page {
 	if($r{error}) {
 		return %r;
 	}
+	$r{wait} = 10;
 	my $np;
 	if( $r{json} &&
 		$r{json}->{data} &&
@@ -429,22 +551,41 @@ sub m_get_page {
 		$np = $url;
 		if($np =~ m/page=(\d+)/) {
 			my $i = int($1)+1;
+			$r{next_page} = $i;
 			$np =~ s/page=\d+/page=$i/;
 		}
 		else {
 			$np = $url . "&page=2";
 		}
 	}
+	elsif($r{json} 
+			&& $r{json}->{ok}
+			&& ref $r{json}->{data}
+			&& ref $r{json}->{data}->{cardlistInfo}
+			&& defined $r{json}->{data}->{cardlistInfo}->{total}
+			&& ($r{json}->{data}->{cardlistInfo}->{total} == 0)
+	){
+		$r{blocked} = 1;
+	}
 	if($np){
-		$r{pass_data} = [$np];
-		$r{pass_count} = 1;
-		$r{same_level} = 1;
+		if($r{next_page} and (!$r{count}) and $r{next_page}>400) {
+			print STDERR "Empty page, and page number >400, stop here\n";
+		}
+		else {
+			$r{pass_data} = [$np];
+			$r{pass_count} = 1;
+			$r{same_level} = 1;
+		}
+	}
+	elsif($r{blocked}) {
+		print STDERR "No data found, user maybe blocked!\n";
+		$r{wait} = 3;
 	}
 	else {
 		print STDERR "No next page found\n";
+		$r{wait} = 5;
 	}
 	delete $r{info};
-	$r{wait} = 10;
 	return %r;
 }
 
@@ -493,6 +634,8 @@ sub m_get_user {
 	my $url = shift;
 	my $oid;
 	foreach(
+		qr/^(\d+)$/,
+		qr/^u\/(\d+)$/,
 		qr/m\.weibo\.cn\/(\d+)/,
 		qr/weibo\.com\/(\d+)/,
 		qr/m\.weibo\.cn\/(?:u|profile)\/(\d+)/,
@@ -509,14 +652,22 @@ sub m_get_user {
 	if($oid) {
 		$nurl = "https://m.weibo.cn/api/container/getIndex?type=uid&value=" . $oid ."&containerid=100505" . $oid;
 	}
-	my $html = get_url($nurl);
+	my $html = get_url($nurl,'-v');
 	my $json = decode_json($html);
-	if(!($json && $json->{ok})) {
+	my $utf8 = find_encoding('utf-8');
+	if(!$json) {
 		return ("error","Parsing page failed");
+	}
+	elsif(!$json->{ok}) {
+		my $msg = "Parsing page failed";
+		if($json->{msg}) {
+			$msg = $utf8->encode($json->{msg});
+			print STDERR $msg,"\n";
+		}
+		return("error"=>$msg);
 	}
 	$json = $json->{data} if($json->{data});
 	$json = $json->{userInfo} if($json->{userInfo});
-	my $utf8 = find_encoding('utf-8');
 	return (
 		uid=>$json->{id},
 		profile=> "u/" . $json->{id},
@@ -524,6 +675,26 @@ sub m_get_user {
 		uname=>$utf8->encode($json->{screen_name}),
 		info=>$json,
 	);
+}
+
+#NOT WORK,TOKEN NEED
+sub m_get_info {
+	my %info = m_get_user(@_);
+	use Data::Dumper;print STDERR Dumper(\%info),"\n";
+	return %info;
+
+	my $query = shift;
+	my $data = get_url(
+		'https://m.weibo.cn/profile/info?' . $query,
+		'--referer','https://m.weibo.cn/profile/2838312893',
+		@_);
+	if($data =~ m/<p[^>]+class="h5-4con"[^>]*>([^<]+)</) {
+		print STDERR $1,"\n";
+		return undef;
+	}
+	my $json = decode_json($data);
+	use Data::Dumper;print Dumper($data,$json),"\n";
+	return $json;
 }
 
 1;

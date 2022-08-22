@@ -39,14 +39,16 @@ BEGIN {
 use Encode qw/from_to decode encode/;
 use MyPlace::Curl;
 
-my $cookie = $ENV{HOME} . "/.curl_cookies.dat";
+#my $cookie = $ENV{HOME} . "/.curl_cookies.dat";
 #my $cookiejar = $ENV{HOME} . "/.curl_cookies2.dat";
+my $cookie = "/myplace/appdata/cookies.txt";
+my $cookiejar = "/myplace/appdata/cookies_jar.txt";
 my $curl = MyPlace::Curl->new(
 	"location"=>'',
 	"silent"=>'',
 	"show-error"=>'',
 	"cookie"=>$cookie,
-	#	"cookie-jar"=>$cookiejar,
+	"cookie-jar"=>$cookiejar,
 #	"retry"=>4,
 	"max-time"=>120,
 );

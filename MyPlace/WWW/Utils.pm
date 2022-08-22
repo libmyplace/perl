@@ -19,8 +19,10 @@ BEGIN {
 		&get_safename
 		&extract_meta
 		&get_curl
+		&new_url_data
 	);
     @EXPORT_OK      = qw(
+		&new_url_data
 		&new_file_data
 		&new_json_data &get_url
 		&parse_pages &unescape_text
@@ -47,9 +49,11 @@ BEGIN {
 use Encode qw/from_to decode encode/;
 use MyPlace::Curl;
 
-our $MAX_TITLE_LENGTH = 100;
-my $cookie = $ENV{HOME} . "/.curl_cookies.dat";
-my $cookiejar = $ENV{HOME} . "/.curl_cookies.dat";
+our $MAX_TITLE_LENGTH = 82;
+#my $cookie = $ENV{HOME} . "/.curl_cookies.dat";
+#my $cookiejar = $ENV{HOME} . "/.curl_cookies2.dat";
+my $cookie = "/myplace/appdata/cookies.txt";
+my $cookiejar = "/myplace/appdata/cookies_jar.txt";
 my $curl = MyPlace::Curl->new(
 	"location"=>'',
 	"silent"=>'',
@@ -69,6 +73,30 @@ my $curl = MyPlace::Curl->new(
 #sub encode {
 #	return Encode::encode(@_);
 #}
+sub new_url_data {
+	my $url = shift;
+	my $bn = shift;
+	my $ext = shift;
+	if(!$bn) {
+		$bn = get_safename(url_getname($url));
+		$bn =~ s/\.[^\.]+$//;
+	}
+	if(!$ext) {
+		$ext = url_getname($url);
+		if($ext =~ m/\.([^\.]+)$/) {
+			$ext = $1;
+		}
+		else {
+			$ext = undef;
+		}
+	}
+	if($bn) {
+		return $url . "\t" . $bn . ($ext ? "." . $ext : "");
+	}
+	else {
+		return $url;
+	}
+}
 
 sub new_html_data {
 	my $html = shift;
@@ -398,7 +426,7 @@ sub unescape_text {
 
 sub create_title_utf8 {
 	my $a = shift;
-	$a =~ s/(?:プレイエロ動画|【pornhub動画】|ストリーミングポルノ)//g;
+	$a =~ s/(?:プレイエロ動画|【pornhub動画】|ストリーミングポルノ|無料ポルノビデオ)//g;
 	$a = decode("utf-8",$a);
 	return encode("utf-8",create_title($a,@_));
 }
@@ -714,6 +742,12 @@ sub url_getfull {
 	if($leaf =~ m/^[^\/]+:/) {
 		return $leaf;
 	}
+	if($leaf =~ m/^?/) {
+		my $r = $root;
+		$r =~ s/\?[^\?]+$//;
+		$r = $r . $leaf;
+		return $r;
+	}
 	my ($base,$path) = @_;
 	$base = url_getbase($root) unless($base);
 	$path = url_extract($root) unless($path);
@@ -763,7 +797,7 @@ sub get_url_redirect {
 	print STDERR "HTTP request sending to $url\n";
 	open FI,'-|',@CURL,'--url',$url;
 	foreach(<FI>) {
-		#print STDERR $_ if($verbose);
+		print STDERR $_;
 		chomp;
 		if(m/"why_captcha_detail"[^>]*>([^<]*)</) {
 			$error = "需要验证：$1";

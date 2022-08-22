@@ -52,6 +52,7 @@ sub OPTIONS {qw/
 	max-time|mt=i
 	connect-timeout|ct=i
 	max-retry|mr=i
+	keep-ts
 /;}
 
 my %EXPS = (
@@ -210,11 +211,18 @@ sub read_m3u8_url {
 			$_ = "$f_base2/$_";
 		}
 		if($_ =~ m/(?:\.m3u8\?|\.m3u8$)/ or ($f_base1 =~ m/ahcdn\.com/ and $_ =~ m/\.mp4$/)) {
-			$idx++;
-			my $fn = $f_m3u;
-			$fn =~ s/\.m3u8$/_$idx.m3u8/;
-			$fn =~ s/\.m3u8\?.*$/_$idx.m3u8/;
-			push @urls,$self->read_m3u8_url($_,$fn,@opts);
+			if($inc_mode) {
+				$idx++;
+				my $fn = $f_m3u;
+				$fn =~ s/\.m3u8$/_$idx.m3u8/;
+				$fn =~ s/\.m3u8\?.*$/_$idx.m3u8/;
+				push @urls,$self->read_m3u8_url($_,$fn,@opts);
+			}
+			else {
+				close $FI;
+				unlink $f_m3u;
+				return $self->read_m3u8_url($_,$f_m3u,@opts);
+			}
 		}
 		else {
 			push @urls,$_;
@@ -272,6 +280,24 @@ sub save_m3u8 {
 		app_warning "File exists: $dst\n";
 		return $self->EXIT_CODE("DONE");
 	}
+	#ENCRYPTED 加密的
+	my @FFMPEG_SITE = (
+		'www\.aitis\.space',
+		'v\d+\.sanzhuliang\.cc',
+		'\d+.lantianxian.org',
+		'v\d+.yhcher\.vip',
+		'v\d+\.qxkja\.top',
+	);
+	my $FFMPEG_EXP = '^https?://(?:' . join("|",@FFMPEG_SITE) . ')';
+	if($url =~ /$FFMPEG_EXP/) {
+		system('ffmpeg','-i',$url,'-c','copy',$dst);
+		if(-f $dst) {
+			return $self->EXIT_CODE("DONE");
+		}
+		else {
+			return $self->FAILED_RETRY($url,$filename,@opts);
+		}
+	}
 	my $f_m3u = $filename . ".m3u8";
 	my @urls = $self->read_m3u8_url($url,$f_m3u,@opts);
 	my $idx = 0;
@@ -293,7 +319,7 @@ sub save_m3u8 {
 		my $output = $filename . '_' .  $idx . '.' . $ext;
 		app_message "  [$idx/$count] ";
 		while((!-f $output) and $try<3) {
-			$self->save_http($url1,$output,@opts);
+			$self->save_http('save_m3u8',$url1,$output,@opts);
 			last if(-f $output);
 			app_warning "Try again ...\n";
 			$try++;
@@ -320,7 +346,10 @@ sub save_m3u8 {
 			push @urls,$prefix . strnum($n,$l) . $suffix;
 		}
 	}
-	if(@files) {
+	if($self->{OPTS}->{'keep-ts'}) {
+		app_message "Options 'keep-ts' on, files will not combined!"
+	}
+	elsif(@files) {
 		if(!open FO,">:raw",$dst) { 
 			app_error "Error writting $dst : $!\n";
 			return $self->EXIT_CODE("ERROR");
@@ -379,6 +408,12 @@ sub file_exists {
 
 sub save_http {
 	my $self = shift;
+	my $from = shift;
+	if($from eq 'save_m3u8') {
+	}
+	else {
+		unshift @_,$from;
+	}
 	my $url = shift;
 	my $filename = shift;
 	if($url =~ m/:\/\/www.shoplineimg.co/) {
@@ -392,6 +427,14 @@ sub save_http {
 		return $r;
 	}
 	my @opts = @_;
+	if($url =~ m/(.+)#testing_aria2_rpc$/) {
+
+		$url = $1;
+		push @opts,'--program','aria2_rpc';
+	}
+	elsif($url =~ m/arzon\.jp\//) {
+		push @opts,"--quiet","--program","wget","--insecure";
+	}
 	push @opts,'--url',$url;
 	foreach(qw/max-time connect-timeout/) {
 		if($self->{OPTS}->{$_}) {
@@ -400,11 +443,23 @@ sub save_http {
 	}
 	if($filename) {
 		return $self->{LAST_EXIT} if($self->file_exists($url,$filename));
-		push @opts,'--saveas',$filename if($filename);
+		push @opts,'--saveas',$filename;
 	}
+	if($url =~ m{//[^\/]*(?:yximgs|kwai|weibo|weibocdn)\.(?:com|net)/}) {
+		#push @opts,'--program','curl';
+	}
+	elsif($from eq 'save_m3u8') {
+	}
+	#elsif($filename and $filename =~ m/\.(?:mp4|mpeg|iso|avi)$/i) {
+	#	push @opts,'--program','aria2_rpc';
+	#}
 	if($url =~ m/:\/\/mtl.ttsqgs.com/) {
 		push @opts,"--refurl","https://www.meitulu.com/item/12345.html";
 	}
+	elsif($url =~ m/:\/\/[^.\/]+\.anyhentai\.com/) {
+		push @opts,"--refurl","https://japanhub.net/video/123976/icd-17";
+	}
+	#print STDERR join("","downloader:","download",@opts,"\n");
 	my $r = system('download',@opts);
 	$r = $r>>8 if(($r != 0) and $r != 2);
 #	if(-f $filename) {
@@ -627,10 +682,14 @@ sub save_urlrule {
 		}
 	}
 	use MyPlace::URLRule;
+	use MyPlace::WWW::Utils qw/url_getfull url_getbase url_extract/;
 	my ($status,$info) = MyPlace::URLRule::request($url,{filename=>$title,ext=>$ext});
 	if($info->{data}) {
 		my $idx = 0;
+		my $url_base = url_getbase($url);
+		my $url_path = url_extract($url);
 		foreach(@{$info->{data}}) {
+			$_ = url_getfull($_,$url,$url_base,$url_path);
 			if($title and $_ !~ m/(?:    |\t)+/) {
 				my ($base,$ext2);
 				if(m/^(.+)\.([^\.]+)$/) {
@@ -835,7 +894,7 @@ sub download {
 	elsif(m/^m3u8:(.+)/) {
 		$exit = $self->save_m3u8($1,$filename,@append);
 	}
-	elsif(m/\.m3u8$|\.m3u8\t/) {
+	elsif(m/\.m3u8$|\.m3u8\t|\.m3u8[#\?]/) {
 		$exit = $self->save_m3u8($url,$filename,@append);
 	}
 	elsif(m/^(https?:\/\/.+)$/) {

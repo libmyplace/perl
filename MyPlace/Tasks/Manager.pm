@@ -5,13 +5,17 @@ use strict;
 use warnings;
 
 use File::Spec::Functions qw/catfile catdir splitdir/;
+use Cwd qw/getcwd/;
 
 our $CONFIG_DIR = '.mtm';
 our $DB_DONE = 'done.txt';
 our $DB_QUEUE = 'queue.txt';
 our $DB_FAILED = 'failed.txt';
 our $DB_IGNORE = 'ignore.txt';
+#my $IAMKILLED = undef;
 
+use MyPlace::URLRule;
+my $domain_maps = $MyPlace::URLRule::Config->{"maps.domain"} || {};
 
 sub new {
 	my $class = shift;
@@ -153,7 +157,7 @@ sub get_key {
 	my $str = shift;
 	#print STDERR "$str => ";
 	return unless($str);
-	if(index($str,'sinaimg.cn')) {
+	if(index($str,'sinaimg.cn')>0) {
 		$str =~ s/:\/\/ww\d+\./:\/\/ww1./;
 		#print STDERR $str,"\n";
 	}
@@ -166,11 +170,29 @@ sub get_key {
 	elsif($str =~ m/aweme\.snssdk\.com\/aweme\/.*\?video_id=([^\s&"]+)/) {
 		$str = "douyin:$1.mp4";
 	}
-	elsif(m/(https?:\/\/f\.video\.weibocdn\.com)\/.*ssig=([^&]+)/) {
+	elsif($str =~ m/(https?:\/\/f\.video\.weibocdn\.com)\/.*ssig=([^&]+)/) {
 		$str = "$1/$2";
 	}
-	elsif(m/(https?:\/\/f\.video\.weibocdn\.com)\/([^&\?]+)/) {
+	elsif($str =~ m/(https?:\/\/f\.video\.weibocdn\.com)\/([^&\?]+)/) {
 		$str = "$1/$2";
+	}
+	#elsif($str =~ m/:\/\/[^\/]*xhamster[^\/]+\/(.+)$/) {
+	#	$str = "xhamster:$1";
+	#}
+	#elsif($str =~ m/https?:\/\/[^\/]*spankbang[^\/]*\/(.+)$/) {
+	#	$str = "spankbang:$1";
+	#}
+	else {
+		foreach my $domain (keys %{$domain_maps}) {
+			if($str =~ m/https?:\/\/$domain\/(.+)$/) {
+				$str = $domain_maps->{$domain} . "/" . $1;
+				last;
+			}
+			elsif($str =~ m/https?:\/\/[^\/]*\.$domain\/(.+)$/) {
+				$str = $domain_maps->{$domain} . "/" . $1;
+				last;
+			}
+		}
 	}
 	$str =~ s/(?:\t| {3,}).+$//;
 	#print "$str\n";
@@ -232,7 +254,20 @@ sub execute {
 }
 
 
-my $IAMKILLED = undef;
+sub get_queue {
+	my $self = shift;
+	my %opt = %{$self->{options}};
+	my @queue = @_;
+	if($opt{include}) {
+		@queue = grep(/$opt{include}/i,@queue);
+	}
+	if($opt{exclude}) {
+		@queue = grep(!/$opt{exclude}/i,@queue);
+	}
+	return @queue;
+}
+
+
 sub _run {
 	my $self = shift;
 	delete $self->{exited};
@@ -306,7 +341,7 @@ sub _run {
 			$self->{options}->{directory} = $kd;
 			$self->{options}->{title} = $kt;
 			$MSG_PROMPT = $km;
-			last if($IAMKILLED);
+			last if($self->{IAMKILLED});
 		}
 	}
 	my $config_dir = $CONFIG_DIR;
@@ -315,13 +350,13 @@ sub _run {
 	}
 
 	my (@queue,@done,@failed,@ignore,@input);
+	my @dup;
 	my %duplicated;
 
-	@input = $self->_read_lines($opt{input}) if($opt{input});
-	push @input,@arguments;
-	$COUNTALL = scalar(@input);
+	$COUNTALL = 0;
 	if($opt{simple}) {
-		push @queue,@input;
+		@input = $self->_read_lines($opt{input}) if($opt{input});
+		@queue = $self->get_queue(@input,@arguments);
 	}
 	elsif(-d $config_dir and -f "$config_dir/stop.txt") {
 		print STDERR "Directory mark STOP:";
@@ -332,29 +367,15 @@ sub _run {
 		@done = $self->_read_lines($DB_DONE,$config_dir) unless($opt{'no-done'});
 		@failed = $self->_read_lines($DB_FAILED,$config_dir) unless($opt{'no-failed'});
 		@ignore = $self->_read_lines($DB_IGNORE,$config_dir) unless($opt{'no-ignored'});
-		my @dup;
-		push @queue, $self->_read_lines($DB_QUEUE,$config_dir) unless($opt{'no-queue'});
-		$COUNTALL = scalar(@queue) + $COUNTALL;
-		if($opt{'no-unique'}) {
-			unshift @queue,@input;
-		}
-		elsif($opt{'no-strict-url'}) {
-			unshift @queue, unique(\@input,\@dup,@queue,@failed,@done,@ignore) if(@input);
-		}
-		else {
-			@queue = unique([@queue,@input],\@dup,@failed,@done,@ignore) if(@queue or @input);
-		}
-		#&_write_lines(\@queue,$DB_QUEUE,$config_dir);
-		#	die(@queue);
-
+		@queue = $self->_read_lines($DB_QUEUE,$config_dir) unless($opt{'no-queue'});
 		if($opt{retry}) {
 			my @newfailed;
 			foreach(@failed) {
-				if($opt{include} and $_ !~ m/$opt{include}/) {
+				if($opt{include} and $_ !~ m/$opt{include}/i) {
 					push @newfailed,$_;
 					next;
 				}
-				elsif($opt{exclude} and $_ =~ m/$opt{exclude}/) {
+				elsif($opt{exclude} and $_ =~ m/$opt{exclude}/i) {
 					push @newfailed,$_;
 					next;
 				}
@@ -364,25 +385,27 @@ sub _run {
 			@failed = @newfailed;
 			&_write_lines(\@failed,$DB_FAILED,$config_dir);
 		}
+		@queue = unique(\@queue,\@dup,@failed,@done,@ignore);
+		@queue = $self->get_queue(@arguments,@queue);
 	}
-	elsif(!(@queue or @input)) {
+	if(!@queue) {
+		if($opt{'simple'}) {
+		}
+		elsif($opt{input}) {
+			@input = $self->_read_lines($opt{input});
+		}
+		if($opt{'no-unique'}) {
+			@queue = $self->get_queue(@input,@arguments);
+		}
+		else {
+			@queue = unique(\@input,\@dup,@failed,@done,@ignore);
+			@queue = $self->get_queue(@queue,@arguments);
+		}
+	}
+	$COUNTALL = scalar(@queue) + $COUNTALL;
+	if(!@queue) {
+		&_write_lines(\@queue,$DB_QUEUE,$config_dir) if(-d $config_dir);
 		return $self->exit($CWD_KEPT,$COUNTER);
-	}
-	elsif($opt{'no-unique'}) {
-		unshift @queue,@input;
-	}
-	elsif($opt{'no-strict-url'}) {
-		unshift @queue, unique(\@input,undef,@queue) if(@input);
-	}
-	else {
-		@queue = unique([@queue,@input],undef) if(@queue or @input);
-	}
-	&_write_lines(\@queue,$DB_QUEUE,$config_dir);
-	if($opt{include}) {
-		@queue = grep(/$opt{include}/,@queue);
-	}
-	if($opt{exclude}) {
-		@queue = grep(!/$opt{exclude}/,@queue);
 	}
 	if(defined $opt{select}) {
 		print STDERR "Select tasks [$opt{select}]\n";
@@ -406,10 +429,14 @@ sub _run {
 			@queue = @queue[0 .. ($opt{count}-1)];
 			$count = scalar(@queue);
 		}
+		elsif($count < 1) {
+			#print STDERR "Empty Queue\n";
+		}
 		else {
 			print STDERR "Invalid option count specified as $opt{count}\n";
 		}
 	}
+	&_write_lines(\@queue,$DB_QUEUE,$config_dir) if(-d $config_dir);
 	p_msg "QUEUE:" . scalar(@queue) .
 		  ", DONE :" . scalar(@done) . 
 		  ", IGNORED: " . scalar(@ignore) . 
@@ -456,7 +483,7 @@ sub _run {
 		return $self->exit(
 			$CWD_KEPT,
 			$COUNTER,
-			($IAMKILLED ? 
+			($self->{IAMKILLED} ? 
 				($self->EXIT_CODE('KILLED'),"KILLED") : 
 				($self->EXIT_CODE("OK"),"OK")
 			)
@@ -465,8 +492,8 @@ sub _run {
 	my $SIGINT = $SIG{INT};
 	$SIG{INT} = sub {
 		delete $SIG{INT};
-		return 2 if($IAMKILLED);
-		$IAMKILLED = 1;
+		return 2 if($self->{IAMKILLED});
+		$self->{IAMKILLED} = 1;
 		print STDERR "MyPlace::Tasks::Manager KILLED\n";
 		return 2;
 	};
@@ -488,9 +515,8 @@ sub _run {
 
 	my $index = 0;
 	
-
 	while($queue[0]) {
-		last if($IAMKILLED);
+		last if($self->{IAMKILLED});
 		last if($opt{nop});
 		my $task = $queue[0];
 		my $r;
@@ -530,9 +556,9 @@ sub _run {
 			}
 		}
 #		print STDERR ("EXIT_CODE[$r]\n");
-		last if($IAMKILLED);
+		last if($self->{IAMKILLED});
 		sleep 1;
-		last if($IAMKILLED);
+		last if($self->{IAMKILLED});
 		if($r == 0) {
 			#	&p_msg("[$index/$count] DONE\n");
 			$COUNTER++;
@@ -541,7 +567,7 @@ sub _run {
 			push @done,$task;
 		}
 		elsif($r == 2) {
-			$IAMKILLED = 1;
+			$self->{IAMKILLED} = 1;
 			print STDERR ("I AM KILLED\n");
 			last;
 		}
@@ -557,6 +583,9 @@ sub _run {
 				shift @queue;
 				&_write_lines([$task],$DB_DONE,$config_dir,'>>');
 				push @done,$task;
+		}
+		elsif($r == $self->EXIT_CODE("PASS")) {
+			shift @queue;
 		}
 		elsif($r == $self->EXIT_CODE("DEBUG")) {
 			shift @queue;
@@ -577,7 +606,7 @@ sub _run {
 				  ", FAILED: " . scalar(@failed) .
 			"\n";
 		}
-		last if($IAMKILLED);
+		last if($self->{IAMKILLED});
 	}
 	$SIG{INT} = $SIGINT;
 	return &$SUBEXIT();

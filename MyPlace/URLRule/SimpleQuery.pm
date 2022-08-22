@@ -205,6 +205,30 @@ sub add {
 		return undef,"NO database loaded"; 
 	}
 }
+sub delete {
+	my $self = shift;
+	my $total = 0;
+	my @error;
+	if($self->{db}) {
+		foreach my $dbname (keys %{$self->{db}}) {
+			my ($count,$msg) = $self->{db}->{$dbname}->delete(@_);
+			if($count) {
+				$total += $count;
+				#print STDERR "$count Id add to [database:$dbname]\n";
+			}
+			else {
+				push @error,"[database:$dbname] $msg";
+			}
+		}
+		if(@error) {
+			#print STDERR join("\n",@error),"\n";
+		}
+		return $total,join("\n",@error);
+	}
+	else {
+		return undef,"NO database loaded"; 
+	}
+}
 
 sub save {
 	my $self = shift;

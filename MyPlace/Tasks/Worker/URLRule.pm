@@ -389,7 +389,7 @@ sub work {
 		my @urls;
 		my @args;
 		foreach(@_) {
-			if(m/^http:\/\//) {
+			if(m/^https?:\/\//) {
 				push @urls,$_;
 			}
 			else {
@@ -398,16 +398,13 @@ sub work {
 		}
 		my $level  = shift(@args) || 0;
 		my $action = shift(@args) || '!DOWNLOADER';
-		my $prefix = '';
-		if($action =~ m/^(\!+)(.+)$/) {
-			$prefix = $1;
-			$action = $2;
+		if($action !~ m/^(\!+)(.+)$/) {
+			$action = $1 .  _validate_cmd({%{$self->{options}},%OPTS},$task,$2);
 		}
-		$action = $prefix .  _validate_cmd({%{$self->{options}},%OPTS},$task,$action);
-
 		if(!@urls) {
 			return $self->error($task,"No url specified");
 		}
+		$WD = catdir($WD,($self->{saveurl} ? $self->{saveurl} : 'saveurl'));
 		my $ERROR_WD = $self->set_workdir($task,$WD);
 		return $ERROR_WD if($ERROR_WD);
 		my $UOO = MyPlace::URLRule::OO->new(
@@ -767,7 +764,8 @@ sub work {
 				$name = "";
 			}
 			$task->{title} = "[urlrule] sites $hosts FOLLOW $id $name";
-			my $dstd = "sites/$hosts";
+			my $dstd = $self->{follow_dir} ? $self->{follow_dir} : "sites";
+			$dstd = "$dstd/$hosts";
 			if(! -d $dstd) {
 				app_warning("Creating directory [$dstd] ... ");
 				if(system("mkdir","-p","--",$dstd)==0) {
@@ -779,7 +777,7 @@ sub work {
 				}
 			}
 			#print STDERR getcwd(),"\n";
-			#print STDERR "$dstd/follows.txt";
+			print STDERR "$dstd/follows.txt";
 			if(system('simple_query','-f',"$dstd/follows.txt",'--command','additem','--',$id,$name)==0) {
 				$task->{git_commands}=[['add',catfile($WD,"$dstd/follows.txt")]];
 				return $TASK_STATUS->{FINISHED}, ($FROMURL ? "${FROMURL}OK" : "OK");

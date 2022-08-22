@@ -10,7 +10,7 @@ package MyPlace::URLRule;
 use URI;
 use URI::Escape;
 use MyPlace::Script::Message;
-use MyPlace::WWW::Utils qw/&get_url &parse_pages/;
+use MyPlace::WWW::Utils qw/&get_url &parse_pages url_getfull/;
 use Cwd qw/abs_path getcwd/;
 use strict;
 
@@ -234,6 +234,8 @@ sub callback_apply_rule {
 	}
 }
 
+my %RETRY_REQUEST;
+my $RETRY_REQUEST_LIMITS = 10;
 sub new_response {
 	my $url = shift;
 	my $rule = shift;
@@ -252,6 +254,22 @@ sub new_response {
 	}
 	elsif(ref $result eq 'ARRAY') {
 		$response{data} = $result;
+	}
+	elsif($result->{retry}) {
+		my $id = $url . $rule->{source} . $rule->{level};
+		$RETRY_REQUEST{$id} = 0 unless(defined $RETRY_REQUEST{$id});
+		$RETRY_REQUEST{$id} += 1;
+		if($RETRY_REQUEST{$id} >= $RETRY_REQUEST_LIMITS) {
+			$response{error} = "$result->{msg} [STOP RETRY]\n";
+		}
+		else {
+			print STDERR $result->{msg} . " [RETRY " . $RETRY_REQUEST{$id} . " ]\n";
+			$response{nextlevel} = {
+				data=>[$url],
+				level=>$rule->{level},
+				count=>1,
+			};
+		}
 	}
 	else {
 		#$result->{action} = $rule->{action} unless($result->{action});

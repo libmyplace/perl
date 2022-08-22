@@ -37,7 +37,7 @@ sub short_wd {
 	if($l > 60) {
 		my @dirs = File::Spec->splitdir($full);
 		my @sdir;
-		my $level = 3;
+		my $level = 4;
 		while(@dirs) {
 			last if($level < 1);
 			my $d = pop @dirs;
@@ -336,6 +336,8 @@ sub autoApply {
 	my $cwd = getcwd();
 	foreach(@nr) {
 		chdir $cwd;
+		$self->{outdated} = undef if($result->{fair_play});
+		#fair_play process all nextlevel no matter outdated
 		if($self->{outdated}) {
 			if($req->{title} or ($result and $result->{title})) {
 				$self->{outdated}=undef;
@@ -515,6 +517,20 @@ sub make_change_dir {
 	my $wd = shift;
 	my $caller = shift(@_) || '';
 		if($wd) {
+#			if(-f "dir_redirect.txt") {
+#				if(open FI,'<','dir_redirect.txt') {
+#					my $ldir = <FI>;
+#					chomp($ldir);
+#					die(join(" ",(`pwd`,"system","ln","-sf","--","$ldir/$wd")),"\n");
+#					if($ldir and -d $ldir) {
+#						if(-d "$ldir/$wd") {
+#							die(join(" ",("system","ln","-sf","--","$ldir/$wd")),"\n");
+#							#system("ln","-sf","--","$ldir/$wd");
+#						}
+#					}
+#					close FI;
+#				}
+#			}
 			unless(-d $wd or $self->makedir($wd)) {
 				app_error($self->{msghd}, 
 					"Error creating directory $wd:$!\n");
@@ -661,14 +677,17 @@ sub get_url_id {
 	elsif($url =~ m/aweme\.snssdk\.com\/aweme\/.*\?video_id=([^\s&"]+)/) {
 		$url = "douyin:$1.mp4";
 	}
+	elsif($url =~ m/weibo\.(?:com|cn)\/detail\/(\d+)/) {
+		$url = "weibo:$1.mp4";
+	}
 	return $url;
 }
 
 	sub get_filename {
 		my $url = shift;
-		$url =~ s/\t+.*$//;
-		$url =~ s/\?.*$//;
-		$url =~ s/^.*\///;
+		if($url =~ m/(?:\t+|\s{4})([^\t]+)$/) {
+			return $1;
+		}
 		return $url;
 	}
 
@@ -723,9 +742,11 @@ sub get_url_id {
 				my $id = get_url_id($url);
 				my $filename = get_filename($url);
 				if($done{$filename} or -f $filename) {
+					app_warning($self->{msghd}, "DUPLICATED filename:$filename\n");
 					next;
 				}
 				elsif($records{$id}) {
+					app_warning($self->{msghd}, "DUPLICATED id:$id\n");
 					if($url =~ m/weishi\.com|weishi_pic/) {
 						$OUTDATE = 1;
 						last;
@@ -827,13 +848,19 @@ sub do_action {
 			return $status unless($status);
 			use MyPlace::Program::Downloader;
 			my $mpd = new MyPlace::Program::Downloader;
-			my ($r) = $mpd->execute(
+			my @opts = (
 				'--input'=>$f_urls,
 				'--title'=>$response->{title},
-				'--retry',
 				'--include'=>$self->{request}->{include},
 				'--exclude'=>$self->{request}->{exclude},
 			);
+			if($self->{request}->{force}) {
+				push @opts,'--force';
+			}
+			if($self->{request}->{retry}) {
+				push @opts,'--retry';
+			}
+			my ($r) = $mpd->execute(@opts);
 			print STDERR ">>> OO.do_action.DOWNLOADER: \$r=$r\n";
 			if($r and $r>=$count) {
 				$self->{SUCCESS} = ($self->{SUCCESS} || 0) + 1;

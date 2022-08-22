@@ -42,12 +42,13 @@ my @OPTIONS = qw/
 		max-time|maxtime|m=i
 		mobile
 		continue
+		insecure
 	/;
 my $proxy = '127.0.0.1:9050';
 my $blocked_host = '\n';#wretch\.cc|facebook\.com|fbcdn\.net';
 my $BLOCKED_EXP = qr/^[^\/]+:\/\/[^\/]*(?:$blocked_host)(?:\/?|\/.*)$/;
 my @WGET = qw{
-    wget -nv -t 3 --connect-timeout 15 --progress bar --show-progress
+    wget -nv -t 3 --connect-timeout 15 --progress bar
 };
 my @CURL = qw{
         curl
@@ -55,6 +56,9 @@ my @CURL = qw{
 		--create-dirs
 		--connect-timeout 15
 		--progress-bar
+};
+my @ARIA2_RPC = qw{
+	aria2_rpc
 };
 
 #my $UA = 'Mozilla/5.0 (compatible; MSIE 9.0; Windows NT 6.1; Trident/5.0)';
@@ -142,6 +146,7 @@ my %PROG_OPT_MAP = (
 		"--post"=>"--post-data",
 		"--compressed"=>'IGNORED',
         "--socks5-hostname"=>'NOTHING',
+		"--insecure"=>"--no-check-certificate",
 	},
 );
 
@@ -149,6 +154,9 @@ sub prog_get {
 	my $name = shift;
 	if($name =~ m/^wget$/i) {
 		return @WGET;
+	}
+	elsif($name =~ m/^aria2_rpc/i) {
+		return @ARIA2_RPC;
 	}
 	else {
 		return @CURL;
@@ -257,6 +265,7 @@ sub build_cmdline {
         push @result,prog_set("--socks5-hostname",$proxy);
     }
 	push @result,prog_set("--continue") if($OPTS{continue});
+	push @result,prog_set("--insecure") if($OPTS{insecure});
     return @result;
 }
 
@@ -266,6 +275,7 @@ sub _process {
 	my $taskname = "$name$url";
     my $cmdline=shift;
     my $retry = shift(@_) || 0;
+	my $saveas = shift;
     my $r=0;
 	#print STDERR join(" ",@{$cmdline}),"\n";
 	my $output = $taskname;
@@ -275,17 +285,17 @@ sub _process {
 	$output =~ s/[\/\\\*\?:"'\[\]\{\}\s,#!\>\<^&~\|+_\-]+//g;
 	$output = $taskname unless($output);
 	$output = substr($output,,40) if(length($output)>40);
-	$output = $output . ".downloading";
-	unlink $output if(-f $output);
+
+	if($cmdline->[0] ne 'aria2_rpc') {
+		$output = $output . ".downloading";
+		unlink $output if(-f $output);
+	}
+	else {
+		$output = $saveas if($saveas);
+	}
     while($retry) {
         $retry--;
 		my @data;
-#		if(open FI,'-|:raw',@{$cmdline}) {
-#			@data = <FI>;
-#			close FI;
-#		}
-#		$r = $?;
-#		print STDERR "Execute: ",join(" ",@{$cmdline},'-o',$output),"\n";
         my @call = (@{$cmdline},prog_set('--output',$output));
 		push @call,get_options($url);
 		#print STDERR "Execute: ",join(" ",@call),"\n";
@@ -308,6 +318,7 @@ sub _process {
 		#52 => curl: (52) Empty reply from server
         return $r,$! if(
 			$r == 2 
+			or $r == 3
 		   #or $r == 22 
 		   #or $r == 56 
 			or $r == 6 
@@ -387,6 +398,9 @@ sub download {
 		pod2usage('--exitval'=>1,'-verbose'=>2);
 		#USAGE
 		return 3;
+	}
+	if($OPT->{program}) {
+		$DEFAULT_PROGRAM = $OPT->{program};
 	}
 	my $exitval;
 	if($OPT->{"no-cookie"}) {
@@ -620,6 +634,7 @@ sub _download {
 				'max-time'=>$options->{'max-time'},
 				'connect-timeout'=>$options->{'connect-timeout'},
 				compressed=>$options->{compressed},
+				insecure=>$options->{insecure},
 			)
 		);
 		my $maxtry = $options->{maxtry};
@@ -631,7 +646,7 @@ sub _download {
 				$maxtry = 2;
 			}
 		}
-		my ($r,@data)=_process($name,$url,\@cmdline,$maxtry);
+		my ($r,@data)=_process($name,$url,\@cmdline,$maxtry,$saveas);
 		if(defined $self->{reportor}) {
 			$self->{reportor}->($self->{reportor_data},$url,$r);
 		}
@@ -640,6 +655,13 @@ sub _download {
 			&log("$url\t$saveas",$HISTORY,1,"ERROR");
 			app_error("\nExecuting \'" . join(" ",@cmdline) . "\'\nError: ",@data,"\n");
 			$exitval = 13;
+			next;
+		}
+		elsif($r == 0 and $cmdline[0] eq 'aria2_rpc') {
+			&log("$url\t$saveas",$HISTORY,1,"SUCCESS");
+		    &log("$url->$saveas\n","$DOWNLOADLOG") if($options->{log});
+		    app_ok "$name$saveas\t[Add to Queue]\n" unless($options->{quiet});
+			$exitval = 0;
 			next;
 		}
 		elsif($r==0 and @data) {
@@ -669,6 +691,12 @@ sub _download {
 			$exitval = 2;
 			#KILLED
 			return $exitval;
+		}
+		elsif($r==3) {
+			&log("$url\t$saveas",$HISTORY,1,"PASSED");
+		    app_warning "$name$url\t[Passed]\n" unless($options->{quiet});
+			$exitval = 3;
+			next;
 		}
 		else {
 #		    unlink $saveas_temp if(-f $saveas_temp);

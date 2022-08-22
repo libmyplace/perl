@@ -115,10 +115,10 @@ sub get_data {
 sub writefile {
 	my $self = shift;
 	my $filename = shift(@_) || $self->{lastfile};
-	if(! -w $filename) {
-		print STDERR "File not writable: $filename\n";
-		return undef;
-	}
+	#if(! -w $filename) {
+	#	print STDERR "File not writable: $filename\n";
+	#	return undef;
+	#}
 	if(open FO,'>',$filename) {
 		print STDERR "Writting $filename ...";
 		print FO $self->get_text(@_);
@@ -164,7 +164,7 @@ sub get {
 	my $key = shift;
 	my $idx = $self->{index}{$key};
 	if(defined $idx) {
-		return $self->{data}[$idx] ? @${$self->{data}[$idx]} : ();
+		return $self->{data}[$idx] ? @{$self->{data}[$idx]} : ();
 	}
 }
 

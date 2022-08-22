@@ -273,6 +273,46 @@ sub add {
 	return $self->_add($r);
 }
 
+sub set {
+	my $self = shift;
+	my $bk = $self->{options}->{overwrite};
+	$self->{options}->{overwrite} = 1;
+	my @r = $self->add(@_);
+	$self->{options}->{overwrite} = $bk;
+	return @r;
+}
+
+sub get {
+	my $self = shift;
+	return unless($self->{info});
+	my $key = shift;
+	return unless(defined $self->{info}->{$key});
+	if(wantarray) {
+		return @{$self->{info}->{$key}};
+	}
+	else {
+		return join("\t",@{$self->{info}->{$key}});
+	}
+}
+
+my $DELETE_MARK = "#_MARK_TO_DELETE";
+sub delete {
+	my $self = shift;
+	my $idName = shift;
+	my($ok,@items) = $self->find_items($idName);
+	if(!$ok) {
+		return undef,"No such item found, nothing to do";
+	}
+	else {
+		my @msg;
+		foreach my $item(@items) {
+			my($k,$v) = @$item;
+			push @msg,"  Delete item : [$k=>$v]";
+			$self->{info}->{$k} = ["$DELETE_MARK"];
+		}
+		return $ok,@msg;
+	}
+}
 
 sub _add {
 	my $self = shift;
@@ -332,6 +372,7 @@ sub saveTo {
 	if(!$self->{info}) {
 		return undef,"No id to save";
 	}
+	#print STDERR "Saving $output ...\n";
 	open FO,">",$output or return undef,"$!, while writting $output";
 	#foreach my $fmt (@{$self->{OUTPUT}}) {
 	#	print FO "#OUTPUT: $fmt\n";
@@ -346,6 +387,10 @@ sub saveTo {
 			print FO "\n";
 		}
 		elsif($self->{info}->{$id} && @{$self->{info}->{$id}}) {
+			if($self->{info}->{$id}->[0] eq $DELETE_MARK) {
+				#print STDERR "Delete ID <$id>\n";
+				next;
+			}
 			print FO $id,"\t",join("\t",@{$self->{info}->{$id}}),"\n";
 		}
 		else {
@@ -354,6 +399,7 @@ sub saveTo {
 	}
 	print FO "#$comment\n" if($comment);
 	close FO;
+	#print STDERR "OK\n";
 	return 1;
 }
 

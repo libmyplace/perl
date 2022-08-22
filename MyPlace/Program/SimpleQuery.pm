@@ -188,11 +188,11 @@ sub show_directory {
 	my $dir = shift;
 	if(-l $dir) {
 		my $link = readlink($dir);
-		print STDERR "\n";
+		#print STDERR "\n";
 		&app_message2("Working in directory: $dir (symbol link)\n\t=>$link\n");
 	}
 	else {
-		print STDERR "\n";
+		#print STDERR "\n";
 		&app_message2("Working in directory: $dir\n");
 	}
 }
@@ -227,7 +227,7 @@ sub do_action {
 					system("junction.exe",$_->{root_dir},$s);
 				}
 				else {
-					system("ln","-sf","-T",$s,$_->{root_dir});
+					system("ln","-svf","-T",$s,$_->{root_dir});
 				}
 			}
 		}

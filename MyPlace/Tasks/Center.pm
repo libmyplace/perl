@@ -524,6 +524,12 @@ sub load {
 			}
 		}
 	}
+	else {
+		$self->{config}->{$sec . "::tasks"} = [];
+		foreach my $level(reverse 0 .. 100) {
+			delete $self->{config}->{$sec . "::tasks$level"};
+		}
+	}
 	foreach (keys %{$self->{config}}) {
 		if(m/$sec\:\:options.([^\s]+)$/) {
 			$self->{options}->{$1} = $self->{config}->{$_};

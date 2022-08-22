@@ -41,6 +41,7 @@ sub set_workdir {
 	my $task = shift;
 	my $WD = shift;
 	my $r;
+	#my $link_from = $task->{link_from} || $self->{link_from} || $self->{options}->{link_from};
 	if($WD) {
 		app_message2 "Directory: $WD\n";
 		my $EWD;
@@ -63,6 +64,9 @@ sub set_workdir {
 			}
 			return $r;
 		}
+		#if($link_from) {
+		#	system("ln","-t",$link_from,"--",$WD);
+		#}
 	}
 	return undef;
 }

@@ -40,7 +40,12 @@ sub new {
 	my $self = bless {status=>$STATUS->{PENDING},namespace=>$namespace},$class;
 	$self->{definition} = [];
 	if(@_) {
-		$self->{definition} = [@_];
+		if(scalar(@_) == 1) {
+			$self->load($namespace . "\n" . $_[0]);
+		}
+		else {
+			$self->{definition} = [@_];
+		}
 	}
 	return $self;
 }
@@ -51,6 +56,7 @@ sub content {
 }
 
 sub new_from_string {
+	die(@_);
 	my $class = shift;
 	my $self = new($class);
 	return $self->load(@_);
@@ -83,7 +89,7 @@ sub save {
 sub load {
 	my $self = CORE::shift;
 	my $text = CORE::shift(@_) || 'myplace-tasks';
-	($self->{namespace},@{$self->{definition}}) = split(/\s*(?:[\>\t]|\\t)\s*/,$text);
+	($self->{namespace},@{$self->{definition}}) = split(/\s*(?:[\>\n\r\t]|\\t)\s*/,$text);
 	return $self;
 }
 
